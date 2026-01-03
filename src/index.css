@@ -1,0 +1,486 @@
+/**
+ * Pics AI - Pinterest 风格设计系统
+ *
+ * @description 全局样式定义，包含主题色、圆角、阴影系统
+ * @design-system
+ * - 主题色: #FF4500 (亮橙色)
+ * - 圆角: 大圆角设计 (8px - 32px)
+ * - 阴影: 纯色阴影，禁止毛玻璃
+ * - 暗色模式: 完全支持
+ */
+
+/* ==========================================================================
+   1. 基础重置
+   ========================================================================== */
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+textarea,
+input {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* ==========================================================================
+   2. Tailwind CSS 导入
+   ========================================================================== */
+
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+/* ==========================================================================
+   3. 主题配置 (@theme)
+   ========================================================================== */
+
+@theme {
+  /* 核心品牌色 - #FF4500 */
+  --color-primary: #FF4500;
+  --color-primary-dark: #E03E00;
+  --color-primary-light: #FF6B33;
+  --color-primary-soft: #FFF0EB;
+
+  /* 次要色 */
+  --color-secondary: #FFB563;
+  --color-accent: #FF6B6B;
+
+  /* 语义色 */
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-error: #EF4444;
+
+  /* 阴影系统（禁止毛玻璃） */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  --shadow-hover: 0 20px 25px -5px rgba(255, 69, 0, 0.15);
+  --shadow-primary: 0 4px 14px rgba(255, 69, 0, 0.25);
+}
+
+/* ==========================================================================
+   4. CSS 变量系统
+   ========================================================================== */
+
+:root {
+  /* ===== 颜色系统 ===== */
+
+  /* 核心品牌色 - #FF4500 */
+  --color-brand: #FF4500;
+  --color-brand-dark: #E03E00;
+  --color-brand-light: #FF6B33;
+  --color-brand-soft: #FFF0EB;
+
+  /* 渐变效果 */
+  --gradient-primary: linear-gradient(135deg, #FF4500 0%, #FF6B33 100%);
+  --gradient-warm: linear-gradient(135deg, #FF6B33 0%, #FF4500 100%);
+
+  /* 中性色 - 亮色模式 */
+  --color-bg: #FAFAFA;
+  --color-bg-card: #FFFFFF;
+  --color-surface: #F5F5F5;
+  --color-border: #E5E5E5;
+  --color-text: #1A1A1A;
+  --color-text-secondary: #767676;
+  --color-text-muted: #9CA3AF;
+
+  /* ===== 圆角系统 ===== */
+
+  /* Pinterest 风格大圆角 */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-2xl: 32px;
+  --radius-full: 9999px;
+
+  /* ===== 间距系统 (8px 网格) ===== */
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+}
+
+/* ===== 暗色模式 ===== */
+
+.dark {
+  --color-bg: #121212;
+  --color-bg-card: #1E1E1E;
+  --color-surface: #2A2A2A;
+  --color-border: #2E2E2E;
+  --color-text: #FAFAFA;
+  --color-text-secondary: #A0A0A0;
+  --color-text-muted: #6B7280;
+
+  /* 暗色模式渐变背景 */
+  --gradient-dark-bg: linear-gradient(
+    135deg,
+    rgba(255, 69, 0, 0.08) 0%,
+    transparent 50%
+  );
+}
+
+/* ==========================================================================
+   5. 基础样式
+   ========================================================================== */
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  transition: background-color 0.3s ease, color 0.3s ease;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 暗色模式背景渐变 */
+.dark body {
+  background-image: var(--gradient-dark-bg);
+}
+
+/* ==========================================================================
+   6. 动画 keyframes
+   ========================================================================== */
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes skeleton-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* ==========================================================================
+   7. 工具类
+   ========================================================================== */
+
+/* 打字机光标 */
+.typing-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  background-color: currentColor;
+  margin-left: 2px;
+  vertical-align: middle;
+  animation: blink 0.8s infinite;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D0D0D0;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #B0B0B0;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #404040;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #505050;
+}
+
+/* 隐藏滚动条 */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* 渐变文字 */
+.gradient-text-primary {
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* 安全区域 */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.safe-area-top {
+  padding-top: env(safe-area-inset-top, 0);
+}
+
+/* 触摸目标最小尺寸 */
+.touch-target {
+  min-height: 48px;
+  min-width: 48px;
+}
+
+/* ==========================================================================
+   8. 动画工具类
+   ========================================================================== */
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease forwards;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease forwards;
+}
+
+.animate-slide-down {
+  animation: slideDown 0.3s ease forwards;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.2s ease forwards;
+}
+
+.animate-spin-slow {
+  animation: spin 3s linear infinite;
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+/* 交错动画延迟 */
+.stagger-1 {
+  animation-delay: 0.05s;
+}
+
+.stagger-2 {
+  animation-delay: 0.1s;
+}
+
+.stagger-3 {
+  animation-delay: 0.15s;
+}
+
+.stagger-4 {
+  animation-delay: 0.2s;
+}
+
+.stagger-5 {
+  animation-delay: 0.25s;
+}
+
+/* ==========================================================================
+   9. 焦点状态
+   ========================================================================== */
+
+.focus-ring:focus-visible {
+  outline: none;
+  ring: 2px;
+  ring-color: var(--color-primary);
+  ring-offset: 2px;
+}
+
+/* ==========================================================================
+   10. 加载骨架屏
+   ========================================================================== */
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-surface) 25%,
+    var(--color-border) 50%,
+    var(--color-surface) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+}
+
+/* ==========================================================================
+   11. 卡片样式（基础，不含毛玻璃）
+   ========================================================================== */
+
+.card {
+  background: var(--color-bg-card);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+}
+
+/* ==========================================================================
+   12. 瀑布流布局
+   ========================================================================== */
+
+.masonry-grid {
+  column-count: 2;
+  column-gap: var(--space-4);
+}
+
+.masonry-item {
+  break-inside: avoid;
+  margin-bottom: var(--space-4);
+}
+
+@media (min-width: 640px) {
+  .masonry-grid {
+    column-count: 3;
+  }
+}
+
+@media (min-width: 1024px) {
+  .masonry-grid {
+    column-count: 4;
+  }
+}
+
+@media (min-width: 1280px) {
+  .masonry-grid {
+    column-count: 5;
+  }
+}
+
+/* ==========================================================================
+   13. 响应式容器
+   ========================================================================== */
+
+.container-responsive {
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: var(--space-4);
+  padding-right: var(--space-4);
+}
+
+@media (min-width: 640px) {
+  .container-responsive {
+    max-width: 640px;
+    padding-left: var(--space-6);
+    padding-right: var(--space-6);
+  }
+}
+
+@media (min-width: 1024px) {
+  .container-responsive {
+    max-width: 1024px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .container-responsive {
+    max-width: 1280px;
+  }
+}
+
+/* ==========================================================================
+   14. 按钮基础样式
+   ========================================================================== */
+
+.btn-primary {
+  background: var(--gradient-primary);
+  color: white;
+  box-shadow: var(--shadow-primary);
+}
+
+.btn-primary:hover {
+  background: var(--gradient-warm);
+  box-shadow: var(--shadow-hover);
+}
