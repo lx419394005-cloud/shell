@@ -49,8 +49,18 @@ export const useMasonry = (
 
   useEffect(() => {
     calculateColumns();
-    window.addEventListener('resize', calculateColumns);
-    return () => window.removeEventListener('resize', calculateColumns);
+    
+    let timer: number;
+    const handleResize = () => {
+      clearTimeout(timer);
+      timer = window.setTimeout(calculateColumns, 100);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      clearTimeout(timer);
+    };
   }, [calculateColumns]);
 
   return columnCount;

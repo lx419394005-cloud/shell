@@ -11,6 +11,8 @@ import { Sparkles, Settings2, ImageIcon, AlertCircle, X, Loader2, Wand2, RotateC
 import { cn } from '@/utils/cn';
 import { ASPECT_RATIOS, type AspectRatioKey, getUseCloudProxy, setUseCloudProxy } from '@/services/imageApi';
 import { optimizePrompt } from '@/services/chatApi';
+import { RatioIcon } from '@/components/common/RatioIcon/RatioIcon';
+import { stripPromptCount, injectPromptCount } from '@/utils/prompt';
 
 /** DrawPanel props interface */
 export interface DrawPanelProps {
@@ -38,51 +40,36 @@ export interface DrawPanelProps {
   onDeleteImage?: (id: string) => Promise<void> | void;
 }
 
-/**
- * 比例图标组件
- */
-const RatioIcon = ({ ratio, active, className }: { ratio: string; active?: boolean; className?: string }) => {
-  const getRect = () => {
-    switch (ratio) {
-      case '1:1': return { width: 12, height: 12 };
-      case '4:3': return { width: 14, height: 10.5 };
-      case '3:4': return { width: 10.5, height: 14 };
-      case '16:9': return { width: 16, height: 9 };
-      case '9:16': return { width: 9, height: 16 };
-      default: return null;
-    }
-  };
-
-  const rect = getRect();
-  if (!rect) return null;
-
-  return (
-    <div 
-      className={cn(
-        "flex items-center justify-center transition-all duration-300",
-        className
-      )}
-    >
-      <div 
-        style={{ 
-          width: `${rect.width}px`, 
-          height: `${rect.height}px`,
-          borderWidth: '1.5px'
-        }}
-        className={cn(
-          "rounded-[2px] border-current transition-all duration-300",
-          active ? "opacity-100" : "opacity-40"
-        )}
-      />
-    </div>
-  );
-};
-
 /** Resolution presets */
 const RESOLUTIONS = [
   { value: '2K', label: '2K' },
   { value: '4K', label: '4K' },
 ] as const;
+
+/** Generation Timer Component */
+const GenerationTimer: React.FC<{ startTime: number | null }> = ({ startTime }) => {
+  const [elapsedTime, setElapsedTime] = useState<string>('0.0');
+
+  useEffect(() => {
+    let interval: number;
+    if (startTime) {
+      interval = window.setInterval(() => {
+        const now = Date.now();
+        const diff = (now - startTime) / 1000;
+        setElapsedTime(diff.toFixed(1));
+      }, 100);
+    }
+    return () => clearInterval(interval);
+  }, [startTime]);
+
+  if (!startTime) return null;
+
+  return (
+    <span className="text-[10px] text-[var(--color-primary)]/60 font-mono ml-1 group-hover/stop:hidden">
+      {elapsedTime}s
+    </span>
+  );
+};
 
 /** DrawPanel component implementation */
 export const DrawPanel: React.FC<DrawPanelProps> = ({ 
@@ -102,7 +89,7 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
   const [negativePrompt] = useState('blurry, low quality, distorted, deformed');
   const [aspectRatio, setAspectRatio] = useState<AspectRatioKey>('1:1');
   const [resolution, setResolution] = useState<'2K' | '4K'>('2K');
-  const [maxImages] = useState<number>(4);
+  const [maxImages, setMaxImages] = useState<number>(4);
   const [useCloudProxy, setUseCloudProxyState] = useState(getUseCloudProxy());
   
   // 批量操作状态
@@ -126,7 +113,7 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
         if (!groups[gId]) {
           groups[gId] = {
             id: gId,
-            prompt: item.prompt,
+            prompt: stripPromptCount(item.prompt),
             timestamp: item.timestamp,
             images: [], // 存储原始 item 对象以供预览
             aspectRatio: item.aspectRatio,
@@ -140,7 +127,6 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
     return Object.values(groups);
   }, [history]);
 
-  const [elapsedTime, setElapsedTime] = useState<string>('0.0');
   const [showSettings, setShowSettings] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isOptimizing, setIsOptimizing] = useState(false);
@@ -188,19 +174,6 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // Timer Effect
-  useEffect(() => {
-    let interval: number;
-    if (isGenerating && startTime) {
-      interval = window.setInterval(() => {
-        const now = Date.now();
-        const diff = (now - startTime) / 1000;
-        setElapsedTime(diff.toFixed(1));
-      }, 100);
-    }
-    return () => clearInterval(interval);
-  }, [isGenerating, startTime]);
-
   // Toggle proxy mode
   const toggleProxyMode = () => {
     const newValue = !useCloudProxy;
@@ -228,8 +201,11 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
 
   // Handle generation
   const handleGenerate = async (customPrompt?: string) => {
-    const finalPrompt = customPrompt || prompt;
-    if (!finalPrompt.trim() || isGenerating) return;
+    const rawPrompt = customPrompt || prompt;
+    if (!rawPrompt.trim() || isGenerating) return;
+    
+    // 注入图片数量提示词
+    const finalPrompt = injectPromptCount(rawPrompt, maxImages);
     setError(null);
     
     try {
@@ -530,14 +506,7 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
                         <span className="text-[10px] font-medium text-[var(--color-primary)] group-hover/stop:text-red-500">
                           正在生成 ({group.images.filter((item: any) => item.status === 'success').length}/{group.images.length})
                         </span>
-                        <span className="text-[10px] font-medium text-red-500 hidden group-hover/stop:inline ml-1">
-                          (点击停止)
-                        </span>
-                        {startTime && (
-                          <span className="text-[10px] text-[var(--color-primary)]/60 font-mono ml-1 group-hover/stop:hidden">
-                            {elapsedTime}s
-                          </span>
-                        )}
+                        <GenerationTimer startTime={startTime} />
                       </button>
                     </div>
                   )}
@@ -637,7 +606,10 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
           )}
         </AnimatePresence>
 
-        <div className="px-4 pb-4 sm:pb-6 flex justify-center bg-gradient-to-t from-[var(--color-bg)] via-[var(--color-bg)]/80 to-transparent pt-10">
+        <div className={cn(
+          "px-4 flex justify-center bg-gradient-to-t from-[var(--color-bg)] via-[var(--color-bg)]/80 to-transparent pt-10",
+           "pb-[calc(env(safe-area-inset-bottom,0px)+100px)] sm:pb-6"
+        )}>
         <div className="w-full max-w-3xl bg-[var(--color-bg-card)]/80 backdrop-blur-xl rounded-2xl sm:rounded-3xl shadow-2xl border border-[var(--color-border)] p-3">
           <div className="flex items-start gap-3 mb-2">
             <button 
@@ -769,6 +741,29 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
                               )}
                             >
                               {res.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 生成数量选择 */}
+                      <div>
+                        <label className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider block mb-3">生成张数</label>
+                        <div className="flex gap-2">
+                          {[1, 2, 4].map((num) => (
+                            <button
+                              key={num}
+                              onClick={() => {
+                                setMaxImages(num);
+                              }}
+                              className={cn(
+                                "flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all",
+                                maxImages === num
+                                  ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)] shadow-lg shadow-[var(--color-primary)]/20"
+                                  : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-text-muted)]"
+                              )}
+                            >
+                              {num}张
                             </button>
                           ))}
                         </div>

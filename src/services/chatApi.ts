@@ -6,6 +6,7 @@
  */
 
 import type { ChatMessage, ChatOptions, ChatStreamCallback } from '@/types/api';
+import { getActiveApiConfig, formatApiUrl } from '@/utils/apiConfig';
 
 /** API endpoint - Direct connection per API_GUIDE.md */
 const API_BASE_URL = 'https://www.aiping.cn/api/v1';
@@ -98,13 +99,15 @@ export async function sendChatMessage(
     top_k,
     presence_penalty,
     enable_thinking,
+    enable_search,
+    systemPrompt,
     provider,
     response_format,
   } = options;
 
   // Build messages array with system prompt and ensure valid roles
   const apiMessages = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: systemPrompt || SYSTEM_PROMPT },
     ...messages.map(m => ({
       ...m,
       role: (m.role as string) === 'ai' ? 'assistant' : m.role
@@ -127,9 +130,10 @@ export async function sendChatMessage(
   if (response_format !== undefined) body.response_format = response_format;
 
   // AI Ping specific: Only include extra_body if explicitly needed and with non-empty values
-  if (enable_thinking !== undefined || (provider && Object.keys(provider).length > 0)) {
+  if (enable_thinking !== undefined || enable_search !== undefined || (provider && Object.keys(provider).length > 0)) {
     body.extra_body = {};
     if (enable_thinking !== undefined) body.extra_body.enable_thinking = enable_thinking;
+    if (enable_search !== undefined) body.extra_body.enable_search = enable_search;
     
     if (provider && Object.keys(provider).length > 0) {
       // Clean up provider object to remove undefined/empty fields that might trigger 422
@@ -150,22 +154,29 @@ export async function sendChatMessage(
     }
   }
 
+  const activeConfig = await getActiveApiConfig('chat');
+  const targetUrl = activeConfig 
+    ? formatApiUrl(activeConfig.baseUrl, '/chat/completions')
+    : `${API_BASE_URL}/chat/completions`;
+  
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${activeConfig ? activeConfig.apiKey : AUTH_TOKEN}`,
+  };
+
   console.log('Chat API Request:', {
-    url: API_BASE_URL + '/chat/completions',
+    url: targetUrl,
     headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + AUTH_TOKEN.substring(0, 10) + '...'
+      ...headers,
+      'Authorization': 'Bearer ' + (activeConfig ? activeConfig.apiKey : AUTH_TOKEN).substring(0, 10) + '...'
     },
     body
   });
 
   try {
-    const response = await fetch(`${API_BASE_URL}/chat/completions`, {
+    const response = await fetch(targetUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${AUTH_TOKEN}`,
-      },
+      headers,
       body: JSON.stringify(body),
     });
 
@@ -204,9 +215,23 @@ export async function sendChatMessage(
 
           try {
             const parsed = JSON.parse(data);
-            const content = parsed.choices?.[0]?.delta?.content;
+            const delta = parsed.choices?.[0]?.delta;
+            const content = delta?.content;
+            const reasoning_content = delta?.reasoning_content;
 
-            if (content) {
+            if (reasoning_content) {
+              // 包装 reasoning_content 到 <think> 标签中，如果还没有的话
+              if (!fullResponse.includes('<think>')) {
+                fullResponse = '<think>' + reasoning_content;
+              } else {
+                fullResponse += reasoning_content;
+              }
+              onStream(reasoning_content, fullResponse);
+            } else if (content) {
+              // 如果 reasoning 结束且还没有关闭标签，则关闭它
+              if (fullResponse.includes('<think>') && !fullResponse.includes('</think>')) {
+                fullResponse += '</think>\n\n';
+              }
               fullResponse += content;
               onStream(content, fullResponse);
             }
@@ -244,6 +269,7 @@ export async function sendChatMessageSync(
     top_k,
     presence_penalty,
     enable_thinking,
+    enable_search,
     provider,
     response_format,
   } = options;
@@ -272,9 +298,10 @@ export async function sendChatMessageSync(
   if (response_format !== undefined) body.response_format = response_format;
 
   // AI Ping specific: Only include extra_body if explicitly needed and with non-empty values
-  if (enable_thinking !== undefined || (provider && Object.keys(provider).length > 0)) {
+  if (enable_thinking !== undefined || enable_search !== undefined || (provider && Object.keys(provider).length > 0)) {
     body.extra_body = {};
     if (enable_thinking !== undefined) body.extra_body.enable_thinking = enable_thinking;
+    if (enable_search !== undefined) body.extra_body.enable_search = enable_search;
     
     if (provider && Object.keys(provider).length > 0) {
       // Clean up provider object to remove undefined/empty fields that might trigger 422
@@ -295,12 +322,17 @@ export async function sendChatMessageSync(
     }
   }
 
+  const activeConfig = await getActiveApiConfig('chat');
+  const targetUrl = activeConfig 
+    ? formatApiUrl(activeConfig.baseUrl, '/chat/completions')
+    : `${API_BASE_URL}/chat/completions`;
+
   try {
-    const response = await fetch(`${API_BASE_URL}/chat/completions`, {
+    const response = await fetch(targetUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${AUTH_TOKEN}`,
+        'Authorization': `Bearer ${activeConfig ? activeConfig.apiKey : AUTH_TOKEN}`,
       },
       body: JSON.stringify(body),
     });

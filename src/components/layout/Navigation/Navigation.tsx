@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { LayoutGrid, Sparkles, Plus, ChevronLeft, ChevronRight, Palette, MessageSquare, Sun, Moon } from 'lucide-react';
+import { LayoutGrid, Sparkles, Plus, ChevronLeft, ChevronRight, Palette, MessageSquare, Sun, Moon, Settings } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
 /** View type */
@@ -26,7 +26,9 @@ export interface NavigationProps {
   className?: string;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  onOpenSettings?: () => void;
   memoryUsage?: string;
+  totalCount?: number;
 }
 
 /** Navigation item config */
@@ -39,7 +41,7 @@ interface NavItem {
 /** Navigation items definition */
 const NAV_ITEMS: NavItem[] = [
   { view: 'home', icon: <LayoutGrid className="w-5 h-5" />, label: '图库' },
-  { view: 'create', icon: <Plus className="w-5 h-5" />, label: 'Create' },
+  { view: 'create', icon: <Plus className="w-5 h-5" />, label: '创作' },
 ];
 
 /**
@@ -67,6 +69,8 @@ interface NavButtonProps {
   fullWidth?: boolean;
   collapsed?: boolean;
   title?: string;
+  badge?: number;
+  className?: string;
 }
 
 const NavButton: React.FC<NavButtonProps> = ({ 
@@ -76,7 +80,9 @@ const NavButton: React.FC<NavButtonProps> = ({
   onClick, 
   fullWidth = false, 
   collapsed = false,
-  title
+  title,
+  badge,
+  className
 }) => {
   return (
     <button
@@ -86,10 +92,11 @@ const NavButton: React.FC<NavButtonProps> = ({
         'rounded-xl group active:scale-95',
         fullWidth ? 'w-full' : 'flex-none',
         fullWidth ? 'h-12' : 'h-10 px-4',
-        fullWidth ? (collapsed ? 'justify-center px-0' : 'justify-start gap-3 px-4') : 'justify-center gap-1',
+        fullWidth ? (collapsed ? 'justify-center px-0' : 'justify-start gap-3 px-4') : 'flex-col justify-center gap-1',
         active
           ? 'text-[var(--color-primary)] bg-[var(--color-primary-soft)]'
-          : 'text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-surface)]'
+          : 'text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-surface)]',
+        className
       )}
       title={collapsed ? title || label : undefined}
     >
@@ -100,13 +107,28 @@ const NavButton: React.FC<NavButtonProps> = ({
         {icon}
       </div>
       {(!fullWidth || (fullWidth && !collapsed)) && (
-        <span className={cn(
-          'font-medium transition-all duration-300',
-          fullWidth ? 'text-sm whitespace-nowrap overflow-hidden' : 'text-xs',
-          active && 'font-semibold'
+        <div className={cn(
+          "flex items-center justify-between",
+          fullWidth ? "flex-1" : "flex-none"
         )}>
-          {label}
-        </span>
+          <span className={cn(
+            'font-medium transition-all duration-300',
+            fullWidth ? 'text-sm whitespace-nowrap overflow-hidden' : 'text-[10px] leading-none',
+            active && 'font-semibold'
+          )}>
+            {label}
+          </span>
+          {badge !== undefined && badge > 0 && (
+            <span className="px-1.5 py-0.5 rounded-md bg-[var(--color-primary)]/10 text-[var(--color-primary)] text-[10px] font-bold">
+              {badge}
+            </span>
+          )}
+        </div>
+      )}
+      {collapsed && badge !== undefined && badge > 0 && (
+        <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-[var(--color-primary)] text-white text-[8px] flex items-center justify-center font-bold border-2 border-[var(--color-bg-card)]">
+          {badge > 99 ? '99+' : badge}
+        </div>
       )}
     </button>
   );
@@ -126,7 +148,9 @@ export const Navigation: React.FC<NavigationProps> = ({
   className,
   collapsed = false,
   onToggleCollapse,
-  memoryUsage
+  onOpenSettings,
+  memoryUsage,
+  totalCount
 }) => {
   const isDesktop = useIsDesktop();
 
@@ -210,6 +234,7 @@ export const Navigation: React.FC<NavigationProps> = ({
               onClick={() => onViewChange(item.view)}
               fullWidth
               collapsed={collapsed}
+              badge={item.view === 'home' ? totalCount : undefined}
             />
           ))}
         </div>
@@ -247,6 +272,20 @@ export const Navigation: React.FC<NavigationProps> = ({
                     )} />
                   </div>
                 )}
+              </button>
+
+              <button
+                onClick={onOpenSettings}
+                className={cn(
+                  "flex items-center gap-3 w-full transition-all group p-1.5 rounded-xl hover:bg-[var(--color-surface)]",
+                  collapsed ? "justify-center" : "justify-start"
+                )}
+                title="API 设置"
+              >
+                <div className="p-1.5 rounded-lg bg-[var(--color-bg-card)] border border-[var(--color-border)] group-hover:border-[var(--color-primary)] transition-colors">
+                  <Settings className="w-4 h-4 text-[var(--color-text)]" />
+                </div>
+                {!collapsed && <span className="text-xs font-semibold text-[var(--color-text)]">API 设置</span>}
               </button>
 
               {memoryUsage && (
@@ -298,20 +337,30 @@ export const Navigation: React.FC<NavigationProps> = ({
   return (
     <nav
       className={cn(
-        'fixed bottom-0 left-0 right-0 h-14 bg-[var(--color-bg-card)] border-t border-[var(--color-border)] z-50',
-        'flex items-center px-6 gap-8 justify-around',
+        'fixed bottom-0 left-0 right-0 bg-[var(--color-bg-card)]/80 backdrop-blur-lg border-t border-[var(--color-border)] z-50',
+        'pt-4 px-6 pb-[calc(env(safe-area-inset-bottom,0px)+24px)]',
         className
       )}
     >
-      {NAV_ITEMS.map((item) => (
+      <div className="flex items-end justify-around max-w-lg mx-auto h-full">
+        {NAV_ITEMS.map((item) => (
+          <NavButton
+            key={item.view}
+            icon={item.icon}
+            label={item.label}
+            active={activeView === item.view}
+            onClick={() => onViewChange(item.view)}
+            className="flex-1 h-14"
+          />
+        ))}
         <NavButton
-          key={item.view}
-          icon={item.icon}
-          label={item.label}
-          active={activeView === item.view}
-          onClick={() => onViewChange(item.view)}
+          icon={<Settings className="w-5 h-5" />}
+          label="设置"
+          active={false}
+          onClick={onOpenSettings || (() => {})}
+          className="flex-1 h-14"
         />
-      ))}
+      </div>
     </nav>
   );
 };

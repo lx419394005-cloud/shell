@@ -469,3 +469,34 @@ body {
   background: var(--gradient-warm);
   box-shadow: var(--shadow-hover);
 }
+
+/* ==========================================================================
+   15. 特殊动效
+   ========================================================================== */
+
+@keyframes shine {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+
+.animate-shine {
+  position: relative;
+  overflow: hidden;
+}
+
+.animate-shine::after {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -100%;
+  width: 50%;
+  height: 200%;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  transform: rotate(30deg);
+  animation: shine 3s infinite linear;
+}

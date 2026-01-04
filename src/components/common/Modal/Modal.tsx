@@ -19,7 +19,7 @@ import { cn } from '@/utils/cn';
 import { scaleIn, fadeIn } from '@/utils/animations';
 
 /** 弹窗尺寸 */
-type ModalSize = 'sm' | 'md' | 'lg';
+type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | '7xl' | 'full';
 
 /** 弹窗属性接口 */
 export interface ModalProps {
@@ -47,6 +47,14 @@ const getSizeStyles = (size: ModalSize): string => {
     sm: 'max-w-sm',
     md: 'max-w-md',
     lg: 'max-w-lg',
+    xl: 'max-w-xl',
+    '2xl': 'max-w-2xl',
+    '3xl': 'max-w-3xl',
+    '4xl': 'max-w-4xl',
+    '5xl': 'max-w-5xl',
+    '6xl': 'max-w-6xl',
+    '7xl': 'max-w-7xl',
+    full: 'max-w-[95vw]',
   };
   return sizes[size];
 };
@@ -87,7 +95,7 @@ export const Modal: React.FC<ModalProps> = ({
             <motion.div
               className={cn(
                 // 基础样式
-                'bg-[var(--color-bg-card)]',
+                'bg-[var(--color-bg-card)] w-full',
                 // 大圆角
                 'rounded-[var(--radius-2xl)]',
                 // 阴影
@@ -95,7 +103,7 @@ export const Modal: React.FC<ModalProps> = ({
                 // 宽度
                 getSizeStyles(size),
                 // 最大高度和溢出
-                'max-h-[85vh] overflow-y-auto',
+                'max-h-[90vh] flex flex-col',
                 // 位置
                 'relative',
                 className
@@ -110,7 +118,7 @@ export const Modal: React.FC<ModalProps> = ({
             >
               {/* 标题栏 */}
               {(title || showClose) && (
-                <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
+                <div className="flex-shrink-0 flex items-center justify-between p-4 border-b border-[var(--color-border)]">
                   {title && (
                     <h2
                       id="modal-title"
@@ -132,7 +140,7 @@ export const Modal: React.FC<ModalProps> = ({
               )}
 
               {/* 内容 */}
-              <div className="p-4">{children}</div>
+              <div className="flex-1 min-h-0 p-4 overflow-y-auto">{children}</div>
             </motion.div>
           </motion.div>
         </>

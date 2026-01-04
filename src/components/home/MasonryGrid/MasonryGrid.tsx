@@ -36,6 +36,8 @@ export interface MasonryGridProps<T> {
   maxColumns?: number;
   /** 列间距 */
   gap?: number;
+  /** 获取唯一 Key 的函数 */
+  getKey?: (item: T, index: number) => string | number;
 }
 
 /**
@@ -49,6 +51,7 @@ export function MasonryGrid<T>({
   minColumns = 2,
   maxColumns = 6,
   gap = 16,
+  getKey,
 }: MasonryGridProps<T>) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -79,19 +82,22 @@ export function MasonryGrid<T>({
           className="flex-1 flex flex-col"
           style={{ gap: `${gap}px` }}
         >
-          <AnimatePresence mode="popLayout">
-            {column.map((item, itemIndex) => (
-              <motion.div
-                key={`${colIndex}-${itemIndex}`}
-                variants={staggerItem}
-                initial="hidden"
-                animate="visible"
-                exit="hidden"
-                layout
-              >
-                {children(item, colIndex * columnCount + itemIndex)}
-              </motion.div>
-            ))}
+          <AnimatePresence mode="popLayout" initial={false}>
+            {column.map((item, itemIndex) => {
+              const itemKey = getKey ? getKey(item, itemIndex) : ((item as any).id || (item as any).url || `${colIndex}-${itemIndex}`);
+              return (
+                <motion.div
+                  key={itemKey}
+                  variants={staggerItem}
+                  initial="hidden"
+                  animate="visible"
+                  exit="hidden"
+                  layout="position"
+                >
+                  {children(item, colIndex * columnCount + itemIndex)}
+                </motion.div>
+              );
+            })}
           </AnimatePresence>
         </div>
       ))}

@@ -83,7 +83,7 @@ export const CreateView: React.FC<CreateViewProps> = ({
     <div className={cn('flex flex-col h-full', className)}>
       {/* 模式切换标签（移动端显示） */}
       {!isDesktop && (
-        <div className="flex gap-2 p-3 pb-0">
+        <div className="flex gap-2 px-3 pb-0 pt-[calc(env(safe-area-inset-top,0px)+12px)]">
           <button
             onClick={() => onModeChange('draw')}
             className={cn(

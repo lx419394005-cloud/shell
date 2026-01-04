@@ -6,6 +6,7 @@
  */
 
 import type { ImageGenerationOptions, ImageGenerationResult } from '@/types/api';
+import { getActiveApiConfig, formatApiUrl } from '@/utils/apiConfig';
 
 /** API base URL - Cloud function proxy to bypass CORS */
 const LAF_APP_BASE_URL = import.meta.env.VITE_LAF_APP_URL || 'https://ax0rcpp85w.sealosbja.site';
@@ -97,12 +98,19 @@ export async function generateImageStream(
   });
 
   const useCloudProxy = getUseCloudProxy();
-  const targetUrl = useCloudProxy ? IMAGE_API_URL : DIRECT_API_URL;
+  const activeConfig = await getActiveApiConfig('image');
+  
+  const targetUrl = activeConfig 
+    ? formatApiUrl(activeConfig.baseUrl, '/generate-image') // 这里我们假设自定义 API 也遵循同样的 endpoint 或者用户直接输入完整地址
+    : (useCloudProxy ? IMAGE_API_URL : DIRECT_API_URL);
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
-  if (!useCloudProxy) {
+  if (activeConfig) {
+    headers['Authorization'] = `Bearer ${activeConfig.apiKey}`;
+  } else if (!useCloudProxy) {
     headers['Authorization'] = `Bearer ${AUTH_TOKEN}`;
   }
 
@@ -242,12 +250,19 @@ export async function generateImage(
   });
 
   const useCloudProxy = getUseCloudProxy();
-  const targetUrl = useCloudProxy ? IMAGE_API_URL : DIRECT_API_URL;
+  const activeConfig = await getActiveApiConfig('image');
+
+  const targetUrl = activeConfig 
+    ? formatApiUrl(activeConfig.baseUrl, '/generate-image')
+    : (useCloudProxy ? IMAGE_API_URL : DIRECT_API_URL);
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
-  if (!useCloudProxy) {
+  if (activeConfig) {
+    headers['Authorization'] = `Bearer ${activeConfig.apiKey}`;
+  } else if (!useCloudProxy) {
     headers['Authorization'] = `Bearer ${AUTH_TOKEN}`;
   }
 

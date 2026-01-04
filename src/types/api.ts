@@ -25,6 +25,8 @@ export interface ChatOptions {
   top_k?: number;
   presence_penalty?: number;
   enable_thinking?: boolean;
+  enable_search?: boolean;
+  systemPrompt?: string;
   provider?: ChatProvider;
   response_format?: {
     type: 'text' | 'json_object';

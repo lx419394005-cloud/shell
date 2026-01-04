@@ -51,8 +51,8 @@ const getVariantStyles = (variant: ButtonVariant, gradient: boolean): string => 
   const variants: Record<ButtonVariant, string> = {
     /** 主要按钮 - 渐变橙色背景 */
     primary: gradient
-      ? 'bg-[var(--gradient-primary)] text-white shadow-[var(--shadow-primary)]'
-      : 'bg-[var(--color-primary)] text-white shadow-[var(--shadow-primary)]',
+      ? 'bg-[var(--gradient-primary)] text-white shadow-[var(--shadow-primary)] hover:opacity-90 active:scale-95 disabled:grayscale disabled:opacity-30 disabled:cursor-not-allowed'
+      : 'bg-[var(--color-primary)] text-white shadow-[var(--shadow-primary)] hover:opacity-90 active:scale-95 disabled:grayscale disabled:opacity-30 disabled:cursor-not-allowed',
 
     /** 次要按钮 - 柔和背景 */
     secondary: 'bg-[var(--color-surface)] text-[var(--color-text)] hover:bg-[var(--color-border)]',
@@ -119,7 +119,8 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           className
         )}
         disabled={disabled || loading}
-        whileTap={{ scale: 0.98 }}
+        whileHover={!disabled && !loading ? { scale: 1.02, translateY: -1 } : undefined}
+        whileTap={!disabled && !loading ? { scale: 0.98, translateY: 0 } : undefined}
         {...props}
       >
         {/* 加载状态 */}

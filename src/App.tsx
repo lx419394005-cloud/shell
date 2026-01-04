@@ -22,39 +22,25 @@ import {
   Container,
   MasonryGrid,
   ImageCard,
-  QuickAction,
   Welcome,
   CreateView,
   Modal,
   Toast,
   type ToastType,
+  GalleryHeader,
+  type SortOrder,
+  RatioIcon,
+  SettingsModal,
 } from './components';
 
-import { generateImage, generateImageStream, type AspectRatioKey, DEFAULT_MODEL } from './services/imageApi';
-import { Copy, Trash2, Download, X, Info, ChevronRight, Settings2 } from 'lucide-react';
-import { getAllImagesFromDB, deleteImageFromDB, saveImageToDB } from './utils/db';
+import { ExportModal } from './components/home/ExportModal/ExportModal';
 
-// 类型定义
-interface HistoryItem {
-  id: string;
-  prompt: string;
-  imageUrl?: string;
-  timestamp: number;
-  // 增加生成参数，支持 feed 流展示
-  aspectRatio?: string;
-  model?: string;
-  size?: string;
-  groupId?: string; // 用于将一组生成的图片归类
-  status?: 'loading' | 'success' | 'error';
-  error?: string;
-}
+import { type HistoryItem, type Message } from './types';
 
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-}
+import { generateImage, DEFAULT_MODEL } from './services/imageApi';
+import { Copy, Trash2, Download, X, Info, ChevronRight, ChevronLeft } from 'lucide-react';
+import { getAllImagesFromDB, deleteImageFromDB, saveImageToDB, clearAllImagesFromDB } from './utils/db';
+import { stripPromptCount } from './utils/prompt';
 
 // 预设聊天模型
 const CHAT_MODELS = [
@@ -71,8 +57,13 @@ function App() {
   const [activeView, setActiveView] = useState<'home' | 'create'>('home');
   const [createMode, setCreateMode] = useState<'draw' | 'chat'>('draw');
   const [previewImage, setPreviewImage] = useState<HistoryItem | null>(null);
+  const [previewList, setPreviewList] = useState<HistoryItem[]>([]);
+  const [exportImage, setExportImage] = useState<HistoryItem | null>(null);
   const [showImageDetails, setShowImageDetails] = useState(false);
   const [aspectRatioFilter, setAspectRatioFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Toast 状态
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
@@ -81,9 +72,31 @@ function App() {
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const showToast = (message: string, type: ToastType = 'info') => {
+  const handlePreviewImage = useCallback((item: HistoryItem, list?: HistoryItem[]) => {
+     setPreviewImage(item);
+     if (list) setPreviewList(list);
+   }, []);
+
+  const showToast = useCallback((message: string, type: ToastType = 'info') => {
     setToast({ message, type });
-  };
+  }, []);
+
+   // 导航预览
+   const handleNavigatePreview = useCallback((direction: 'prev' | 'next') => {
+    if (!previewImage || previewList.length === 0) return;
+    
+    const currentIndex = previewList.findIndex(item => item.id === previewImage.id);
+    if (currentIndex === -1) return;
+    
+    let nextIndex;
+    if (direction === 'next') {
+      nextIndex = (currentIndex + 1) % previewList.length;
+    } else {
+      nextIndex = (currentIndex - 1 + previewList.length) % previewList.length;
+    }
+    
+    setPreviewImage(previewList[nextIndex]);
+  }, [previewImage, previewList]);
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -170,6 +183,22 @@ function App() {
     setIsSelectionMode(false);
   }, [selectedIds, history]);
 
+  // 清空所有历史
+  const handleClearAll = useCallback(async () => {
+    if (history.length === 0) return;
+    if (!confirm('确定要清空所有历史记录吗？此操作不可撤销。')) return;
+
+    try {
+      await clearAllImagesFromDB();
+      setHistory([]);
+      showToast('已清空所有历史记录', 'success');
+      window.dispatchEvent(new Event('storage'));
+    } catch (error) {
+      console.error('清空失败:', error);
+      showToast('清空失败', 'error');
+    }
+  }, [history.length]);
+
   // 计算内存占用 (仅针对 Base64 图片)
   const memoryUsage = useMemo(() => {
     const totalBytes = history.reduce((acc, item) => {
@@ -226,25 +255,7 @@ function App() {
   }, []);
 
   // ===== 聊天状态 =====
-  const [chatMessages] = useState<Message[]>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('chat_history');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          return parsed.map((msg: Record<string, unknown>) => ({
-            id: msg.id as string,
-            role: (msg.role === 'ai' ? 'assistant' : msg.role) as 'user' | 'assistant',
-            content: msg.content as string,
-            timestamp: new Date(msg.timestamp as string),
-          }));
-        } catch {
-          return [];
-        }
-      }
-    }
-    return [];
-  });
+  const [chatMessages] = useState<Message[]>([]);
 
   const [selectedChatModel] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -277,10 +288,8 @@ function App() {
   // 保存历史记录逻辑已迁移至 IndexedDB
   // 此处原有的 localStorage.setItem('image_history', ...) 应该移除
 
-  // 保存聊天记录
-  useEffect(() => {
-    localStorage.setItem('chat_history', JSON.stringify(chatMessages));
-  }, [chatMessages]);
+  // 保存聊天记录逻辑已迁移至 IndexedDB
+  // 此处原有的 localStorage.setItem('chat_history', ...) 应该移除
 
   // 保存聊天模型
   useEffect(() => {
@@ -291,6 +300,25 @@ function App() {
   useEffect(() => {
     localStorage.setItem('sidebar_collapsed', String(isSidebarCollapsed));
   }, [isSidebarCollapsed]);
+
+  // 图片预览键盘导航
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!previewImage) return;
+
+      if (e.key === 'ArrowLeft') {
+        handleNavigatePreview('prev');
+      } else if (e.key === 'ArrowRight') {
+        handleNavigatePreview('next');
+      } else if (e.key === 'Escape') {
+        setPreviewImage(null);
+        setShowImageDetails(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [previewImage, handleNavigatePreview]);
 
   // ===== 处理函数 =====
 
@@ -311,7 +339,7 @@ function App() {
 
   // 复制提示词
   const handleCopyPrompt = (prompt: string) => {
-    navigator.clipboard.writeText(prompt);
+    navigator.clipboard.writeText(stripPromptCount(prompt));
     // 可以添加 toast 提示
   };
 
@@ -433,40 +461,9 @@ function App() {
     }
   };
 
-  // 处理图片生成
-  const handleImageGenerated = async (
-    images: string[], 
-    prompt: string, 
-    base64Images?: string[],
-    options?: { aspectRatio?: string; size?: string; model?: string }
-  ) => {
-    const groupId = Math.random().toString(36).substring(2, 11);
-    const newItems: HistoryItem[] = images.map((url, index) => ({
-      id: Math.random().toString(36).substring(2, 11),
-      prompt,
-      // 如果有 Base64 则优先使用，否则使用 URL
-      imageUrl: (base64Images && base64Images[index]) ? base64Images[index] : url,
-      timestamp: Date.now(),
-      aspectRatio: options?.aspectRatio,
-      size: options?.size,
-      model: options?.model || 'Doubao-Seedream-4.5',
-      groupId,
-    }));
-
-    // 异步保存到 IndexedDB
-    try {
-      for (const item of newItems) {
-        await saveImageToDB(item);
-      }
-    } catch (error) {
-      console.error('保存到 IndexedDB 失败:', error);
-    }
-
-    // 更新内存中的历史状态
-    setHistory((prev) => [...newItems, ...prev]);
-    
-    // 触发全局事件，让图库和绘制面板感知到新图片
-    window.dispatchEvent(new Event('storage'));
+  // 导出图片
+  const handleExport = (item: HistoryItem) => {
+    setExportImage(item);
   };
 
   const handleStopGeneration = useCallback(() => {
@@ -484,18 +481,15 @@ function App() {
     setGenStartTime(Date.now());
     stopGenerationRef.current = false;
     
-    // 注入生成数量提示（根据用户要求：如果选择了多张，注入到提示词中）
-    let finalPrompt = prompt;
-    if (options.maxImages > 1 && !prompt.includes('生成') && !prompt.includes('张')) {
-      finalPrompt = `生成${options.maxImages}张关于: ${prompt}`;
-    }
+    const finalPrompt = prompt;
 
     // 创建一个新的 groupId 用于这一批次
     const groupId = `batch-${Date.now()}`;
     
-    // 预先创建一个占位符（作为加载反馈）
-    const placeholder: HistoryItem = {
-      id: `${groupId}-1`,
+    // 预先创建占位符（作为加载反馈）
+    const numImages = options.maxImages || 4;
+    const placeholders: HistoryItem[] = Array.from({ length: numImages }).map((_, i) => ({
+      id: `${groupId}-${i + 1}`,
       groupId,
       prompt: finalPrompt,
       timestamp: Date.now(),
@@ -503,9 +497,9 @@ function App() {
       size: options.size,
       model: DEFAULT_MODEL,
       status: 'loading'
-    };
+    }));
 
-    setHistory(prev => [placeholder, ...prev]);
+    setHistory(prev => [...placeholders, ...prev]);
 
     try {
       // 检查是否已停止
@@ -519,7 +513,7 @@ function App() {
       // 单次请求生成所有图片 (API 内部已硬编码 max_images: 4)
       const result = await generateImage(finalPrompt, {
         ...options,
-        maxImages: 4 // 确保后端允许最多 4 张
+        maxImages: numImages // 使用设置的张数，默认为 4
       });
       
       if (result.success && result.base64Images && result.base64Images.length > 0) {
@@ -537,7 +531,7 @@ function App() {
           };
         });
 
-        // 完全替换占位符逻辑：移除旧的 loading 占位符，插入实际返回的结果
+        // 如果生成的数量少于预期的占位符数量，需要清理多余的占位符
         setHistory(prev => {
           const filtered = prev.filter(item => item.groupId !== groupId);
           return [...newItems, ...filtered];
@@ -560,7 +554,9 @@ function App() {
       ));
       
       // 保存错误状态到数据库
-      await saveImageToDB({ ...placeholder, status: 'error', error: err.message || '生成失败' });
+      for (const placeholder of placeholders) {
+        await saveImageToDB({ ...placeholder, status: 'error', error: err.message || '生成失败' });
+      }
     } finally {
       setIsGenerating(false);
       setGenStartTime(null);
@@ -603,12 +599,25 @@ function App() {
             )}>
               <img
                 src={previewImage.imageUrl || ''}
-                alt={previewImage.prompt}
+                alt={stripPromptCount(previewImage.prompt)}
                 className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl border border-white/10"
               />
               
               {/* 顶部操作按钮 */}
               <div className="absolute top-4 right-4 flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    if (confirm('确定要删除这张图片吗？')) {
+                      handleDeleteImage(previewImage.id);
+                      setPreviewImage(null);
+                      setShowImageDetails(false);
+                    }
+                  }}
+                  className="p-2 bg-black/40 text-red-400 rounded-full hover:bg-black/60 transition-all backdrop-blur-md border border-white/20"
+                  title="删除图片"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
                 <button
                   onClick={() => setShowImageDetails(!showImageDetails)}
                   className={cn(
@@ -631,6 +640,32 @@ function App() {
                   <X className="w-5 h-5" />
                 </button>
               </div>
+
+              {/* 左右切换按钮 */}
+              {previewList.length > 1 && (
+                <>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleNavigatePreview('prev');
+                    }}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-black/40 text-white rounded-full hover:bg-black/60 transition-all backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100 hidden md:flex"
+                    title="上一个 (←)"
+                  >
+                    <ChevronLeft className="w-6 h-6" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleNavigatePreview('next');
+                    }}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-black/40 text-white rounded-full hover:bg-black/60 transition-all backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100 hidden md:flex"
+                    title="下一个 (→)"
+                  >
+                    <ChevronRight className="w-6 h-6" />
+                  </button>
+                </>
+              )}
 
               {/* 底部悬浮操作栏 (仅在详情关闭时显示) */}
               <AnimatePresence>
@@ -689,7 +724,7 @@ function App() {
                       <div>
                         <h4 className="text-sm font-medium text-[var(--color-text-secondary)] mb-2">提示词</h4>
                         <div className="p-4 bg-[var(--color-surface)] rounded-xl text-sm leading-relaxed border border-[var(--color-border)] text-[var(--color-text)]">
-                          {previewImage.prompt}
+                          {stripPromptCount(previewImage.prompt)}
                         </div>
                         <button
                           onClick={() => handleCopyPrompt(previewImage.prompt)}
@@ -712,6 +747,22 @@ function App() {
                             <span className="text-sm font-medium text-[var(--color-text)]">{previewImage.aspectRatio || '1:1'}</span>
                           </div>
                         </div>
+                      </div>
+
+                      {/* 更多元数据 */}
+                      <div className="grid grid-cols-2 gap-4">
+                        {previewImage.model && (
+                          <div className="p-3 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]">
+                            <span className="text-[10px] text-[var(--color-text-secondary)] uppercase block mb-1">模型</span>
+                            <span className="text-sm font-medium text-[var(--color-text)] truncate block">{previewImage.model}</span>
+                          </div>
+                        )}
+                        {previewImage.size && (
+                          <div className="p-3 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]">
+                            <span className="text-[10px] text-[var(--color-text-secondary)] uppercase block mb-1">分辨率</span>
+                            <span className="text-sm font-medium text-[var(--color-text)]">{previewImage.size}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -746,6 +797,16 @@ function App() {
         )}
       </Modal>
 
+      {/* 导出弹窗 */}
+      {exportImage && (
+        <ExportModal
+          isOpen={!!exportImage}
+          onClose={() => setExportImage(null)}
+          imageUrl={exportImage.imageUrl || ''}
+          prompt={exportImage.prompt}
+        />
+      )}
+
       {/* 全局提示 */}
       <AnimatePresence>
         {toast && (
@@ -771,6 +832,18 @@ function App() {
           collapsed={isSidebarCollapsed}
           onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
           memoryUsage={memoryUsage}
+          totalCount={history.length}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+        />
+
+        {/* API 设置弹窗 */}
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          onConfigsChange={() => {
+            // 这里可以添加配置更新后的逻辑，比如重新加载 API 客户端
+            showToast('API 配置已更新', 'success');
+          }}
         />
 
         {/* 主内容区域 */}
@@ -778,7 +851,7 @@ function App() {
           "flex-1 h-screen overflow-hidden transition-all duration-300",
           isSidebarCollapsed ? "ml-20" : "ml-64"
         )}>
-          <Container className="h-full">
+          <Container size="full" className="h-full px-0 sm:px-0 lg:px-0">
             <PageContent
                 activeView={activeView}
                 createMode={createMode}
@@ -786,12 +859,12 @@ function App() {
                 history={history}
                 chatMessages={chatMessages}
                 onOpenDraw={handleOpenDraw}
-                onOpenChat={handleOpenChat}
                 onCopyPrompt={handleCopyPrompt}
                 onDeleteImage={handleDeleteImage}
                 onDeleteGroup={handleDeleteGroup}
                 onDownload={handleDownload}
-                onPreviewImage={setPreviewImage}
+                onExport={handleExport}
+                onPreviewImage={handlePreviewImage}
                 showToast={showToast}
                 isGenerating={isGenerating}
                 genStartTime={genStartTime}
@@ -806,15 +879,20 @@ function App() {
                 onSelectAll={handleSelectAll}
                 onBatchDelete={handleBatchDelete}
                 onBatchDownload={handleBatchDownload}
+                onClearAll={handleClearAll}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                sortOrder={sortOrder}
+                onSortOrderChange={setSortOrder}
               />
           </Container>
         </main>
       </div>
 
       {/* 移动端布局 */}
-      <div className="md:hidden">
+      <div className="md:hidden flex flex-col h-screen overflow-hidden">
         {/* 主内容 */}
-        <main className="min-h-screen">
+        <main className="flex-1 relative overflow-hidden">
           <PageContent
             activeView={activeView}
             createMode={createMode}
@@ -822,12 +900,12 @@ function App() {
             history={history}
             chatMessages={chatMessages}
             onOpenDraw={handleOpenDraw}
-            onOpenChat={handleOpenChat}
             onCopyPrompt={handleCopyPrompt}
             onDeleteImage={handleDeleteImage}
             onDeleteGroup={handleDeleteGroup}
             onDownload={handleDownload}
-            onPreviewImage={setPreviewImage}
+            onExport={handleExport}
+            onPreviewImage={handlePreviewImage}
             showToast={showToast}
             isGenerating={isGenerating}
             genStartTime={genStartTime}
@@ -842,6 +920,11 @@ function App() {
             onSelectAll={handleSelectAll}
             onBatchDelete={handleBatchDelete}
             onBatchDownload={handleBatchDownload}
+            onClearAll={handleClearAll}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            sortOrder={sortOrder}
+            onSortOrderChange={setSortOrder}
           />
         </main>
 
@@ -850,6 +933,7 @@ function App() {
           activeView={activeView}
           onViewChange={setActiveView}
           memoryUsage={memoryUsage}
+          onOpenSettings={() => setIsSettingsOpen(true)}
         />
       </div>
     </motionHtml.div>
@@ -866,11 +950,11 @@ interface PageContentProps {
   history: HistoryItem[];
   chatMessages: Message[];
   onOpenDraw: () => void;
-  onOpenChat: () => void;
   onDeleteImage: (id: string) => void;
   onDownload: (url: string | undefined, prompt: string) => void;
   onPreviewImage: (item: any, allItems?: any[], index?: number) => void;
   onDeleteGroup?: (groupId: string) => void;
+  onExport: (item: HistoryItem) => void;
   showToast: (message: string, type?: ToastType) => void;
   isGenerating: boolean;
   genStartTime: number | null;
@@ -886,48 +970,12 @@ interface PageContentProps {
   onSelectAll?: (ids: string[]) => void;
   onBatchDelete?: () => void;
   onBatchDownload?: () => void;
+  onClearAll?: () => void;
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
+  sortOrder: SortOrder;
+  onSortOrderChange: (order: SortOrder) => void;
 }
-
-/**
- * 比例图标组件
- */
-const RatioIcon = ({ ratio, active, className }: { ratio: string; active?: boolean; className?: string }) => {
-  const getRect = () => {
-    switch (ratio) {
-      case '1:1': return { width: 12, height: 12 };
-      case '4:3': return { width: 14, height: 10.5 };
-      case '3:4': return { width: 10.5, height: 14 };
-      case '16:9': return { width: 16, height: 9 };
-      case '9:16': return { width: 9, height: 16 };
-      default: return null;
-    }
-  };
-
-  const rect = getRect();
-  if (!rect) return null;
-
-  return (
-    <div 
-      className={cn(
-        "flex items-center justify-center transition-all duration-300",
-        ratio === '16:9' || ratio === '9:16' ? "w-5 h-5" : "w-4 h-4",
-        className
-      )}
-    >
-      <div 
-        style={{ 
-          width: `${rect.width}px`, 
-          height: `${rect.height}px`,
-          borderWidth: '1.5px'
-        }}
-        className={cn(
-          "rounded-[2px] border-current transition-all duration-300",
-          active ? "opacity-100" : "opacity-40"
-        )}
-      />
-    </div>
-  );
-};
 
 const PageContent: React.FC<PageContentProps> = ({
   activeView,
@@ -935,12 +983,12 @@ const PageContent: React.FC<PageContentProps> = ({
   onModeChange,
   history,
   onOpenDraw,
-  onOpenChat,
   onCopyPrompt,
   onDeleteImage,
   onDownload,
   onPreviewImage,
   onDeleteGroup,
+  onExport,
   showToast,
   isGenerating,
   genStartTime,
@@ -955,6 +1003,11 @@ const PageContent: React.FC<PageContentProps> = ({
   onSelectAll,
   onBatchDelete,
   onBatchDownload,
+  onClearAll,
+  searchQuery,
+  onSearchChange,
+  sortOrder,
+  onSortOrderChange,
 }) => {
   const [isDesktop, setIsDesktop] = useState(false);
 
@@ -969,17 +1022,42 @@ const PageContent: React.FC<PageContentProps> = ({
   // 过滤和分组逻辑
   const filteredHistory = useMemo(() => {
     let result = history;
+    
+    // 比例过滤
     if (aspectRatioFilter !== 'all') {
       result = result.filter(item => item.aspectRatio === aspectRatioFilter);
     }
+    
+    // 搜索过滤
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(item => 
+        item.prompt.toLowerCase().includes(query)
+      );
+    }
+    
+    // 排序
+    result = [...result].sort((a, b) => {
+      if (sortOrder === 'newest') {
+        return b.timestamp - a.timestamp;
+      } else {
+        return a.timestamp - b.timestamp;
+      }
+    });
+    
     return result;
-  }, [history, aspectRatioFilter]);
+  }, [history, aspectRatioFilter, searchQuery, sortOrder]);
 
   const groupedHistory = useMemo(() => {
     const groups: { [key: string]: HistoryItem[] } = {};
-    const sorted = [...filteredHistory].sort((a, b) => b.timestamp - a.timestamp);
+    const sorted = [...filteredHistory];
+  if (sortOrder === 'newest') {
+    sorted.sort((a, b) => b.timestamp - a.timestamp);
+  } else {
+    sorted.sort((a, b) => a.timestamp - b.timestamp);
+  }
 
-    sorted.forEach(item => {
+  sorted.forEach(item => {
       const date = new Date(item.timestamp);
       const today = new Date();
       const yesterday = new Date();
@@ -1001,8 +1079,6 @@ const PageContent: React.FC<PageContentProps> = ({
     return Object.entries(groups).map(([label, items]) => ({ label, items }));
   }, [filteredHistory]);
 
-  const aspectRatios = ['all', '1:1', '4:3', '3:4', '16:9', '9:16'];
-
   // 获取当前所有可见图片的 ID（用于全选）
   const allVisibleIds = useMemo(() => filteredHistory.map(item => item.id), [filteredHistory]);
 
@@ -1020,74 +1096,30 @@ const PageContent: React.FC<PageContentProps> = ({
             {/* 可滚动区域 */}
             <div className={cn(
               'flex-1 overflow-y-auto',
-              !isDesktop && 'pb-20'
+              !isDesktop && 'pb-32'
             )}>
-              {/* 顶部标题和过滤器 - 固定定位 */}
-              <div className={cn(
-                "sticky top-0 z-30 bg-[var(--color-bg)]/80 backdrop-blur-md px-6 py-4 border-b border-[var(--color-border)]/50 transition-all",
-                !isDesktop && "px-4 py-3"
-              )}>
-                <div className={cn(
-                  "flex flex-col md:flex-row md:items-center justify-between gap-4",
-                )}>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-xl font-bold bg-clip-text text-transparent bg-[var(--gradient-primary)]">我的图库</h2>
-                    <div className="px-2 py-0.5 rounded-md bg-[var(--color-primary)]/10 text-[var(--color-primary)] text-[10px] font-bold uppercase tracking-wider">
-                      {filteredHistory.length}
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-3 overflow-x-auto no-scrollbar pb-1">
-                    {/* 批量操作触发按钮 */}
-                    {filteredHistory.length > 0 && (
-                      <button
-                        onClick={onToggleSelectionMode}
-                        className={cn(
-                          "flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all border",
-                          isSelectionMode 
-                            ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)] shadow-lg shadow-[var(--color-primary)]/20" 
-                            : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
-                        )}
-                      >
-                        {isSelectionMode ? (
-                          <>
-                            <X className="w-3.5 h-3.5" />
-                            取消选择
-                          </>
-                        ) : (
-                          <>
-                            <Settings2 className="w-3.5 h-3.5" />
-                            批量管理
-                          </>
-                        )}
-                      </button>
-                    )}
-
-                    <div className="w-px h-4 bg-[var(--color-border)] mx-1" />
-
-                    {aspectRatios.map(ratio => (
-                      <button
-                        key={ratio}
-                        onClick={() => onAspectRatioFilterChange(ratio)}
-                        className={cn(
-                          "px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap border flex items-center gap-2",
-                          aspectRatioFilter === ratio
-                            ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)] shadow-lg shadow-[var(--color-primary-soft)]"
-                            : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:bg-[var(--color-border)]"
-                        )}
-                      >
-                        {ratio !== 'all' && (
-                          <RatioIcon ratio={ratio} active={aspectRatioFilter === ratio} />
-                        )}
-                        <span>{ratio === 'all' ? '全部尺寸' : ratio}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
+              {/* 顶部标题和过滤器 */}
+              <GalleryHeader
+                totalCount={filteredHistory.length}
+                searchQuery={searchQuery}
+                onSearchChange={onSearchChange}
+                aspectRatioFilter={aspectRatioFilter}
+                onAspectRatioFilterChange={onAspectRatioFilterChange}
+                isSelectionMode={isSelectionMode || false}
+                onToggleSelectionMode={onToggleSelectionMode || (() => {})}
+                selectedCount={selectedIds?.size || 0}
+                onSelectAll={() => onSelectAll?.(allVisibleIds)}
+                isAllSelected={selectedIds?.size === allVisibleIds.length}
+                onBatchDownload={onBatchDownload || (() => {})}
+                onBatchDelete={onBatchDelete || (() => {})}
+                onClearAll={onClearAll}
+                sortOrder={sortOrder}
+                onSortOrderChange={onSortOrderChange}
+                isDesktop={isDesktop}
+              />
 
               <div className={cn(
-                isDesktop ? 'pt-8 px-6' : 'px-3 pt-4'
+                isDesktop ? 'pt-8 px-4' : 'px-3 pt-4'
               )}>
                 {!isDesktop && history.length === 0 && (
                   <div className="px-4 pb-2">
@@ -1109,7 +1141,7 @@ const PageContent: React.FC<PageContentProps> = ({
                         <MasonryGrid
                           items={group.items}
                           minColumns={2}
-                          maxColumns={5}
+                          maxColumns={8}
                           gap={isDesktop ? 16 : 10}
                         >
                           {(item) => (
@@ -1122,11 +1154,12 @@ const PageContent: React.FC<PageContentProps> = ({
                               onClick={() => onPreviewImage(item)}
                               onCopy={() => onCopyPrompt(item.prompt)}
                               onDelete={() => onDeleteImage(item.id)}
-                          onDownload={() => onDownload(item.imageUrl, item.prompt)}
-                          isSelectionMode={isSelectionMode}
-                          isSelected={selectedIds?.has(item.id)}
-                          onToggleSelect={() => onToggleSelectImage?.(item.id)}
-                        />
+                              onDownload={() => onDownload(item.imageUrl, item.prompt)}
+                              onExport={() => onExport(item)}
+                              isSelectionMode={isSelectionMode}
+                              isSelected={selectedIds?.has(item.id)}
+                              onToggleSelect={() => onToggleSelectImage?.(item.id)}
+                            />
                           )}
                         </MasonryGrid>
                       </div>

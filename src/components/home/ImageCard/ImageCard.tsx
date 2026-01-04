@@ -16,8 +16,9 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Copy, Trash2, Download, Maximize2, Check } from 'lucide-react';
+import { Copy, Trash2, Download, Maximize2, Check, Share2 } from 'lucide-react';
 import { cn } from '@/utils/cn';
+import { stripPromptCount } from '@/utils/prompt';
 
 /** 宽高比类型 */
 type AspectRatio = '1:1' | '3:4' | '2:3';
@@ -42,6 +43,8 @@ export interface ImageCardProps {
   onDelete?: () => void;
   /** 下载回调 */
   onDownload?: () => void;
+  /** 导出回调 */
+  onExport?: () => void;
   /** 是否处于选择模式 */
   isSelectionMode?: boolean;
   /** 是否已选中 */
@@ -74,7 +77,7 @@ const getAspectRatioString = (ratio: AspectRatio): string => {
 /**
  * ImageCard 组件实现
  */
-export const ImageCard: React.FC<ImageCardProps> = ({
+export const ImageCard = React.memo<ImageCardProps>(({
   imageUrl,
   prompt,
   aspectRatio = '3:4',
@@ -84,6 +87,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
   onCopy,
   onDelete,
   onDownload,
+  onExport,
   isSelectionMode,
   isSelected,
   onToggleSelect,
@@ -100,7 +104,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (isLoading || isError) return;
-    navigator.clipboard.writeText(prompt).then(() => {
+    navigator.clipboard.writeText(stripPromptCount(prompt)).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
       onCopy?.();
@@ -157,7 +161,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
           {/* 图片 - 移除 h-full object-cover，使用 w-full 保持比例 */}
           <img
             src={imageUrl}
-            alt={prompt}
+            alt={stripPromptCount(prompt)}
             loading="lazy"
             className={cn(
               "w-full h-auto block transition-transform duration-500",
@@ -205,7 +209,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
           >
             {/* 提示词 */}
             <p className="text-white text-xs sm:text-sm font-medium line-clamp-2 mb-2 sm:mb-3">
-              {prompt}
+              {stripPromptCount(prompt)}
             </p>
 
             {/* 操作按钮组 */}
@@ -254,6 +258,20 @@ export const ImageCard: React.FC<ImageCardProps> = ({
                 <Maximize2 className="w-3.5 h-3.5 sm:w-4 h-4" />
               </button>
 
+              {/* 导出按钮 */}
+              {onExport && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onExport();
+                  }}
+                  className="p-1.5 sm:p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors"
+                  title="导出带提示词的图片"
+                >
+                  <Share2 className="w-3.5 h-3.5 sm:w-4 h-4" />
+                </button>
+              )}
+
               {/* 删除按钮 */}
               {onDelete && (
                 <button
@@ -283,6 +301,6 @@ export const ImageCard: React.FC<ImageCardProps> = ({
       </div>
     </motion.div>
   );
-};
+});
 
 export default ImageCard;
