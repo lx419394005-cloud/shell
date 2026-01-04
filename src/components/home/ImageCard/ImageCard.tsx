@@ -103,8 +103,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
         // 阴影和过渡
         'shadow-[var(--shadow-md)] hover:shadow-[var(--shadow-hover)]',
         'transition-shadow duration-300 cursor-pointer group',
-        // 宽高比
-        ASPECT_RATIO_CLASS[aspectRatio],
+        // 移除固定的宽高比类，允许图片自适应高度
         className
       )}
       onMouseEnter={() => setIsHovered(true)}
@@ -113,12 +112,12 @@ export const ImageCard: React.FC<ImageCardProps> = ({
       whileHover={{ y: -4 }}
       layout
     >
-      {/* 图片 */}
+      {/* 图片 - 移除 h-full object-cover，使用 w-full 保持比例 */}
       <img
         src={imageUrl}
         alt={prompt}
         loading="lazy"
-        className="w-full h-full object-cover"
+        className="w-full h-auto block"
       />
 
       {/* 悬浮遮罩 */}
@@ -129,22 +128,22 @@ export const ImageCard: React.FC<ImageCardProps> = ({
           'bg-gradient-to-t from-black/70 via-black/20 to-black/0',
           'opacity-0 transition-opacity duration-300',
           // 定位操作按钮
-          'flex flex-col justify-end p-4'
+          'flex flex-col justify-end p-3 sm:p-4'
         )}
         style={{ opacity: isHovered ? 1 : 0 }}
       >
         {/* 提示词 */}
-        <p className="text-white text-sm font-medium line-clamp-2 mb-3">
+        <p className="text-white text-xs sm:text-sm font-medium line-clamp-2 mb-2 sm:mb-3">
           {prompt}
         </p>
 
         {/* 操作按钮组 */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {/* 复制按钮 */}
           <button
             onClick={handleCopy}
             className={cn(
-              'p-2 rounded-full transition-colors',
+              'p-1.5 sm:p-2 rounded-full transition-colors',
               copied
                 ? 'bg-green-500 text-white'
                 : 'bg-white/20 hover:bg-white/40 text-white'
@@ -152,9 +151,9 @@ export const ImageCard: React.FC<ImageCardProps> = ({
             title="复制提示词"
           >
             {copied ? (
-              <span className="text-xs">✓</span>
+              <span className="text-[10px] sm:text-xs">✓</span>
             ) : (
-              <Copy className="w-4 h-4" />
+              <Copy className="w-3.5 h-3.5 sm:w-4 h-4" />
             )}
           </button>
 
@@ -165,10 +164,10 @@ export const ImageCard: React.FC<ImageCardProps> = ({
                 e.stopPropagation();
                 onDownload();
               }}
-              className="p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors"
+              className="p-1.5 sm:p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors"
               title="下载"
             >
-              <Download className="w-4 h-4" />
+              <Download className="w-3.5 h-3.5 sm:w-4 h-4" />
             </button>
           )}
 
@@ -178,20 +177,20 @@ export const ImageCard: React.FC<ImageCardProps> = ({
               e.stopPropagation();
               onClick?.();
             }}
-            className="p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors"
+            className="p-1.5 sm:p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors"
             title="预览"
           >
-            <Maximize2 className="w-4 h-4" />
+            <Maximize2 className="w-3.5 h-3.5 sm:w-4 h-4" />
           </button>
 
           {/* 删除按钮 */}
           {onDelete && (
             <button
               onClick={handleDelete}
-              className="p-2 ml-auto bg-red-500/80 hover:bg-red-500 rounded-full text-white transition-colors"
+              className="p-1.5 sm:p-2 ml-auto bg-red-500/80 hover:bg-red-500 rounded-full text-white transition-colors"
               title="删除"
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className="w-3.5 h-3.5 sm:w-4 h-4" />
             </button>
           )}
         </div>

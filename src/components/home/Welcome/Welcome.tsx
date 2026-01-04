@@ -52,27 +52,27 @@ export const Welcome: React.FC<WelcomeProps> = ({
       transition={{ duration: 0.4 }}
     >
       {/* 标题行 */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
         {/* 图标 */}
         <div
           className={cn(
-            'p-2 rounded-full',
+            'p-1.5 sm:p-2 rounded-full',
             'bg-[var(--gradient-primary)]',
             'text-white',
             'shadow-[var(--shadow-primary)]'
           )}
         >
-          <Sparkles className="w-5 h-5" />
+          <Sparkles className="w-4 h-4 sm:w-5 h-5" />
         </div>
 
         {/* 主标题 */}
-        <h1 className="text-2xl font-bold text-[var(--color-text)]">
+        <h1 className="text-xl sm:text-2xl font-bold text-[var(--color-text)]">
           {title}
         </h1>
       </div>
 
       {/* 副标题 */}
-      <p className="text-[var(--color-text-secondary)] ml-12">
+      <p className="text-xs sm:text-sm text-[var(--color-text-secondary)] ml-10 sm:ml-12">
         {subtitle}
       </p>
     </motion.div>

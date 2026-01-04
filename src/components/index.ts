@@ -5,6 +5,7 @@
 import { Button, type ButtonProps } from './common/Button/Button';
 import { Card, type CardProps } from './common/Card/Card';
 import { Modal, type ModalProps } from './common/Modal/Modal';
+import { Toast, type ToastType } from './common/Toast/Toast';
 
 // layout
 import { Navigation, type NavigationProps } from './layout/Navigation/Navigation';
@@ -26,6 +27,7 @@ import { PromptInput, type PromptInputProps } from './create/PromptInput/PromptI
 export { Button, type ButtonProps };
 export { Card, type CardProps };
 export { Modal, type ModalProps };
+export { Toast, type ToastType };
 
 // layout exports
 export { Navigation, type NavigationProps };

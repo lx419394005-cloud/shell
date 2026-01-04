@@ -20,6 +20,30 @@ export interface ChatOptions {
   model?: string;
   temperature?: number;
   maxTokens?: number;
+  max_completion_tokens?: number;
+  top_p?: number;
+  top_k?: number;
+  presence_penalty?: number;
+  enable_thinking?: boolean;
+  provider?: ChatProvider;
+  response_format?: {
+    type: 'text' | 'json_object';
+  };
+}
+
+/** Chat provider options */
+export interface ChatProvider {
+  only?: string[];
+  order?: string[];
+  sort?: ('input_price' | 'output_price' | 'throughput' | 'latency' | 'input_length')[];
+  input_price_range?: number[];
+  output_price_range?: number[];
+  throughput_range?: number[];
+  latency_range?: number[];
+  input_length_range?: number[];
+  allow_fallbacks?: boolean;
+  ignore?: string[];
+  allow_filter_prompt_length?: boolean;
 }
 
 /** Chat streaming callback */
@@ -38,6 +62,7 @@ export interface ImageGenerationOptions {
 export interface ImageGenerationResult {
   success: boolean;
   images: string[];
+  base64Images?: string[];
   prompt: string;
   error?: string;
 }

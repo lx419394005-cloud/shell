@@ -37,18 +37,18 @@ export const QuickAction: React.FC<QuickActionProps> = ({
   return (
     <div
       className={cn(
-        // 布局：移动端上下堆叠，桌面端并排
-        'flex flex-col sm:flex-row gap-4',
+        // 布局：移动端并排，桌面端也并排
+        'flex flex-row gap-2.5 sm:gap-4',
         className
       )}
     >
       {/* 绘图按钮 */}
       <motion.div
         className={cn(
-          'flex-1',
+          'flex-1 min-w-0',
           'bg-[var(--gradient-primary)]',
-          'rounded-[var(--radius-2xl)]',
-          'p-6',
+          'rounded-[var(--radius-xl)] sm:rounded-[var(--radius-2xl)]',
+          'p-3 sm:p-6',
           'text-white',
           'shadow-[var(--shadow-primary)]',
           'cursor-pointer',
@@ -59,18 +59,15 @@ export const QuickAction: React.FC<QuickActionProps> = ({
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
       >
-        {/* 背景装饰 */}
-        <div className="absolute -right-4 -top-4 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
-
         {/* 内容 */}
-        <div className="relative flex items-center gap-4">
-          <div className="p-3 bg-white/20 rounded-full">
-            <Palette className="w-6 h-6" />
+        <div className="relative flex items-center gap-2 sm:gap-4">
+          <div className="p-1.5 sm:p-3 bg-white/20 rounded-full flex-shrink-0">
+            <Palette className="w-4 h-4 sm:w-6 h-6" />
           </div>
-          <div>
-            <h3 className="text-lg font-semibold">🎨 开始绘图</h3>
-            <p className="text-white/80 text-sm mt-1">
-              用文字描述，让 AI 为你创作
+          <div className="min-w-0">
+            <h3 className="text-sm sm:text-lg font-semibold truncate">AI 绘图</h3>
+            <p className="text-white/80 text-[10px] sm:text-sm mt-0.5 truncate">
+              让 AI 为你创作
             </p>
           </div>
         </div>
@@ -79,11 +76,11 @@ export const QuickAction: React.FC<QuickActionProps> = ({
       {/* 聊天按钮 */}
       <motion.div
         className={cn(
-          'flex-1',
+          'flex-1 min-w-0',
           'bg-[var(--color-surface)]',
           'dark:bg-[var(--color-surface)]',
-          'rounded-[var(--radius-2xl)]',
-          'p-6',
+          'rounded-[var(--radius-xl)] sm:rounded-[var(--radius-2xl)]',
+          'p-3 sm:p-6',
           'border-2 border-[var(--color-border)]',
           'cursor-pointer',
           'relative',
@@ -94,22 +91,20 @@ export const QuickAction: React.FC<QuickActionProps> = ({
         whileTap={{ scale: 0.98 }}
       >
         {/* 内容 */}
-        <div className="relative flex items-center gap-4">
+        <div className="relative flex items-center gap-2 sm:gap-4">
           <div
             className={cn(
-              'p-3 rounded-full',
+              'p-1.5 sm:p-3 rounded-full flex-shrink-0',
               'bg-[var(--color-primary-soft)]',
               'text-[var(--color-primary)]'
             )}
           >
-            <MessageSquare className="w-6 h-6" />
+            <MessageSquare className="w-4 h-4 sm:w-6 h-6" />
           </div>
-          <div>
-            <h3 className="text-lg font-semibold text-[var(--color-text)]">
-              💬 开始对话
-            </h3>
-            <p className="text-[var(--color-text-secondary)] text-sm mt-1">
-              与 AI 助手深度交流
+          <div className="min-w-0">
+            <h3 className="text-sm sm:text-lg font-semibold truncate">智能对话</h3>
+            <p className="text-[var(--color-text-secondary)] text-[10px] sm:text-sm mt-0.5 truncate">
+              获取无限灵感
             </p>
           </div>
         </div>

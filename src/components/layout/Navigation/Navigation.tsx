@@ -6,17 +6,26 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Home, Sparkles, Plus } from 'lucide-react';
+import { Home, Sparkles, Plus, ChevronLeft, ChevronRight, Palette, MessageSquare, Sun, Moon } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
 /** View type */
 type ViewType = 'home' | 'create';
+/** Create mode type */
+type CreateMode = 'draw' | 'chat';
 
 /** Navigation props interface */
 export interface NavigationProps {
   activeView: ViewType;
   onViewChange: (view: ViewType) => void;
+  createMode?: CreateMode;
+  onOpenDraw?: () => void;
+  onOpenChat?: () => void;
+  isDarkMode?: boolean;
+  onToggleTheme?: () => void;
   className?: string;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 /** Navigation item config */
@@ -28,7 +37,7 @@ interface NavItem {
 
 /** Navigation items definition */
 const NAV_ITEMS: NavItem[] = [
-  { view: 'home', icon: <Home className="w-5 h-5" />, label: 'Discover' },
+  { view: 'home', icon: <Home className="w-5 h-5" />, label: '图库' },
   { view: 'create', icon: <Plus className="w-5 h-5" />, label: 'Create' },
 ];
 
@@ -54,46 +63,37 @@ interface NavButtonProps {
   active: boolean;
   onClick: () => void;
   fullWidth?: boolean;
+  collapsed?: boolean;
 }
 
-const NavButton: React.FC<NavButtonProps> = ({ item, active, onClick, fullWidth = false }) => {
+const NavButton: React.FC<NavButtonProps> = ({ item, active, onClick, fullWidth = false, collapsed = false }) => {
   return (
     <button
       onClick={onClick}
       className={cn(
-        'flex items-center justify-center transition-colors duration-200 relative',
-        'rounded-xl',
-        fullWidth ? 'w-full' : 'flex-1',
-        fullWidth ? 'h-12' : 'h-full py-2',
-        fullWidth ? 'gap-3 px-4' : 'gap-1',
+        'flex items-center transition-all duration-200 relative',
+        'rounded-xl group',
+        fullWidth ? 'w-full' : 'flex-none',
+        fullWidth ? 'h-12' : 'h-10 px-4',
+        fullWidth ? (collapsed ? 'justify-center px-0' : 'justify-start gap-3 px-4') : 'justify-center gap-1',
         active
           ? 'text-[var(--color-primary)] bg-[var(--color-primary-soft)]'
           : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)]'
       )}
+      title={collapsed ? item.label : undefined}
     >
-      {item.icon}
-      <span className={cn('font-medium text-sm', active && 'font-semibold', !fullWidth && 'text-[10px]')}>
-        {fullWidth ? item.label : ''}
-      </span>
-      {/* Desktop active indicator */}
-      {fullWidth && active && (
-        <motion.div
-          layoutId="activeNav"
-          className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-[var(--color-primary)] rounded-r-full"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.2 }}
-        />
+      <div className={cn("transition-transform duration-200", !active && "group-hover:scale-110")}>
+        {item.icon}
+      </div>
+      {!fullWidth && (
+        <span className={cn('font-medium text-xs', active && 'font-semibold')}>
+          {item.label}
+        </span>
       )}
-      {/* Mobile active indicator */}
-      {!fullWidth && active && (
-        <motion.div
-          layoutId="activeNavMobile"
-          className="absolute bottom-0 w-8 h-5 bg-[var(--color-primary)] rounded-t-full"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.2 }}
-        />
+      {fullWidth && !collapsed && (
+        <span className={cn('font-medium text-sm whitespace-nowrap overflow-hidden', active && 'font-semibold')}>
+          {item.label}
+        </span>
       )}
     </button>
   );
@@ -102,40 +102,173 @@ const NavButton: React.FC<NavButtonProps> = ({ item, active, onClick, fullWidth 
 /**
  * Navigation component implementation
  */
-export const Navigation: React.FC<NavigationProps> = ({ activeView, onViewChange, className }) => {
+export const Navigation: React.FC<NavigationProps> = ({ 
+  activeView, 
+  onViewChange, 
+  createMode,
+  onOpenDraw,
+  onOpenChat,
+  isDarkMode,
+  onToggleTheme,
+  className,
+  collapsed = false,
+  onToggleCollapse
+}) => {
   const isDesktop = useIsDesktop();
 
   if (isDesktop) {
     return (
-      <aside className={cn('fixed left-0 top-0 bottom-0 z-40', 'w-64 flex flex-col', 'bg-[var(--color-bg-card)] border-r border-[var(--color-border)]', 'p-4', className)}>
-        {/* Logo area */}
-        <div className="flex items-center gap-3 px-4 py-3 mb-6">
-          <div className={cn('w-10 h-10 rounded-full', 'bg-[var(--gradient-primary)]', 'flex items-center justify-center', 'text-white shadow-[var(--shadow-primary)]')}>
-            <Sparkles className="w-5 h-5" />
-          </div>
-          <span className="font-bold text-lg text-[var(--color-text)]">Pics AI</span>
+      <nav
+        className={cn(
+          'fixed left-0 top-0 h-screen bg-[var(--color-bg-card)] border-r border-[var(--color-border)] z-50',
+          'flex flex-col py-6 transition-all duration-300',
+          collapsed ? 'w-20 px-3' : 'w-64 px-4',
+          className
+        )}
+      >
+        {/* Logo / Brand */}
+        <div className={cn(
+          "flex items-center mb-8 px-2 transition-all duration-300",
+          collapsed ? "justify-center" : "justify-between"
+        )}>
+          {!collapsed && (
+            <motion.div 
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="flex items-center gap-2"
+            >
+              <div className="w-8 h-8 bg-[var(--gradient-primary)] rounded-lg flex items-center justify-center">
+                <Sparkles className="w-5 h-5 text-white" />
+              </div>
+              <span className="font-bold text-xl tracking-tight text-[var(--color-text)]">Pics AI</span>
+            </motion.div>
+          )}
+          {collapsed && (
+            <div className="w-8 h-8 bg-[var(--gradient-primary)] rounded-lg flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-white" />
+            </div>
+          )}
         </div>
 
-        {/* Navigation list */}
-        <nav className="flex-1 space-y-1">
-          {NAV_ITEMS.map((item) => (
-            <NavButton key={item.view} item={item} active={activeView === item.view} onClick={() => onViewChange(item.view)} fullWidth />
+        {/* Create Section */}
+        <div className="flex flex-col gap-2 mb-8">
+          {!collapsed && (
+            <div className="px-2 mb-1">
+              <span className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider">
+                开始创作
+              </span>
+            </div>
+          )}
+          <button
+            onClick={onOpenDraw}
+            className={cn(
+              'flex items-center transition-all duration-200 rounded-xl group h-12 w-full',
+              collapsed ? 'justify-center' : 'gap-3 px-4',
+              activeView === 'create' && createMode === 'draw'
+                ? 'bg-[var(--gradient-primary)] text-white shadow-md'
+                : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]'
+            )}
+            title={collapsed ? "AI 绘图" : undefined}
+          >
+            <Palette className={cn("w-5 h-5", activeView === 'create' && createMode === 'draw' ? "text-white" : "text-[var(--color-primary)]")} />
+            {!collapsed && <span className="font-semibold text-sm">AI 绘图</span>}
+          </button>
+          
+          <button
+            onClick={onOpenChat}
+            className={cn(
+              'flex items-center transition-all duration-200 rounded-xl group h-12 w-full',
+              collapsed ? 'justify-center' : 'gap-3 px-4',
+              activeView === 'create' && createMode === 'chat'
+                ? 'bg-[var(--gradient-primary)] text-white shadow-md'
+                : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]'
+            )}
+            title={collapsed ? "智能对话" : undefined}
+          >
+            <MessageSquare className={cn("w-5 h-5", activeView === 'create' && createMode === 'chat' ? "text-white" : "text-[var(--color-primary)]")} />
+            {!collapsed && <span className="font-semibold text-sm">智能对话</span>}
+          </button>
+        </div>
+
+        {/* Navigation Items */}
+        <div className="flex flex-col gap-2">
+          {!collapsed && (
+            <div className="px-2 mb-1">
+              <span className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider">
+                发现内容
+              </span>
+            </div>
+          )}
+          {NAV_ITEMS.filter(item => item.view !== 'create').map((item) => (
+            <NavButton
+              key={item.view}
+              item={item}
+              active={activeView === item.view}
+              onClick={() => onViewChange(item.view)}
+              fullWidth
+              collapsed={collapsed}
+            />
           ))}
-        </nav>
-
-        {/* Bottom area */}
-        <div className="pt-4 border-t border-[var(--color-border)]">
-          <div className="px-4 py-2 text-xs text-[var(--color-text-muted)]">Creative AI Generator</div>
         </div>
-      </aside>
+
+        {/* Collapse Toggle & Theme Toggle */}
+        <div className="mt-auto flex flex-col gap-2">
+          <button
+            onClick={onToggleTheme}
+            className={cn(
+              "flex items-center justify-center h-10 w-full rounded-xl",
+              "text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)]",
+              "transition-colors duration-200"
+            )}
+            title={isDarkMode ? "切换亮色模式" : "切换暗色模式"}
+          >
+            {collapsed ? (
+              isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />
+            ) : (
+              <div className="flex items-center gap-3 px-2 w-full">
+                {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                <span className="text-sm font-medium">{isDarkMode ? '亮色模式' : '暗色模式'}</span>
+              </div>
+            )}
+          </button>
+
+          <button
+            onClick={onToggleCollapse}
+            className={cn(
+              "flex items-center justify-center h-10 w-full rounded-xl",
+              "text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)]",
+              "transition-colors duration-200"
+            )}
+            title={collapsed ? "展开" : "收起"}
+          >
+            {collapsed ? <ChevronRight className="w-5 h-5" /> : (
+              <div className="flex items-center gap-3 px-2 w-full">
+                <ChevronLeft className="w-5 h-5" />
+                <span className="text-sm font-medium">收起侧边栏</span>
+              </div>
+            )}
+          </button>
+        </div>
+      </nav>
     );
   }
 
-  // Mobile: Bottom Tab
+  // Mobile navigation
   return (
-    <nav className={cn('fixed bottom-0 left-0 right-0 z-40', 'h-16 pb-safe', 'bg-[var(--color-bg-card)] border-t border-[var(--color-border)]', 'flex items-end justify-around px-2', className)}>
+    <nav
+      className={cn(
+        'fixed bottom-0 left-0 right-0 h-14 bg-[var(--color-bg-card)] border-t border-[var(--color-border)] z-50',
+        'flex items-center px-6 gap-8 justify-around',
+        className
+      )}
+    >
       {NAV_ITEMS.map((item) => (
-        <NavButton key={item.view} item={item} active={activeView === item.view} onClick={() => onViewChange(item.view)} />
+        <NavButton
+          key={item.view}
+          item={item}
+          active={activeView === item.view}
+          onClick={() => onViewChange(item.view)}
+        />
       ))}
     </nav>
   );

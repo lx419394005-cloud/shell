@@ -83,10 +83,10 @@ export default defineConfig({
   server: {
     host: true,
     proxy: {
-      '/api-proxy': {
+      '/api/v1': {
         target: 'https://www.aiping.cn',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api-proxy/, '')
+        secure: false,
       }
     }
   }

@@ -71,10 +71,10 @@ export const PromptInput: React.FC<PromptInputProps> = ({
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled || loading}
-          rows={mode === 'multi-line' ? 3 : 1}
+          rows={mode === 'multi-line' ? 2 : 1}
           className={cn(
             // 基础样式
-            'w-full px-4 py-3',
+            'w-full px-3 py-2.5 sm:px-4 sm:py-3',
             // 圆角
             mode === 'multi-line'
               ? 'rounded-[var(--radius-xl)]'
@@ -82,7 +82,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
             // 颜色
             'bg-[var(--color-surface)]',
             'text-[var(--color-text)]',
-            'placeholder:text-[var(--color-text-muted)]',
+            'placeholder:text-[var(--color-text-muted)] text-sm sm:text-base',
             // 边框
             'border border-[var(--color-border)]',
             // 聚焦状态

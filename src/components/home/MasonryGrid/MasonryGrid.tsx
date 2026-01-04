@@ -65,16 +65,19 @@ export function MasonryGrid<T>({
     <div
       ref={containerRef}
       className={cn(
-        // 布局方式：使用 flex 实现瀑布流
-        'flex gap-4',
+        'flex',
         className
       )}
-      style={{ paddingBottom: gap }}
+      style={{ 
+        gap: `${gap}px`,
+        paddingBottom: `${gap}px` 
+      }}
     >
       {columns.map((column, colIndex) => (
         <div
           key={colIndex}
-          className="flex-1 flex flex-col gap-4"
+          className="flex-1 flex flex-col"
+          style={{ gap: `${gap}px` }}
         >
           <AnimatePresence mode="popLayout">
             {column.map((item, itemIndex) => (

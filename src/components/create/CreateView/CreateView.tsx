@@ -25,6 +25,20 @@ export interface CreateViewProps {
   activeMode: CreateMode;
   /** 模式切换回调 */
   onModeChange: (mode: CreateMode) => void;
+  /** 图片生成回调 */
+  onImageGenerated?: (images: string[], prompt: string) => void;
+  /** 生成状态 */
+  isGenerating?: boolean;
+  /** 生成开始时间 */
+  genStartTime?: number | null;
+  /** 历史记录 */
+  history?: any[];
+  /** 启动生成回调 */
+  onStartGeneration?: (prompt: string, options: any) => Promise<void>;
+  /** 预览图片回调 */
+  onPreviewImage?: (item: any) => void;
+  /** 全局提示回调 */
+  showToast?: (message: string, type?: any) => void;
   /** CSS 类名 */
   className?: string;
 }
@@ -35,6 +49,13 @@ export interface CreateViewProps {
 export const CreateView: React.FC<CreateViewProps> = ({
   activeMode,
   onModeChange,
+  onImageGenerated,
+  isGenerating,
+  genStartTime,
+  history,
+  onStartGeneration,
+  onPreviewImage,
+  showToast,
   className,
 }) => {
   const [isDesktop, setIsDesktop] = useState(false);
@@ -53,30 +74,30 @@ export const CreateView: React.FC<CreateViewProps> = ({
     <div className={cn('flex flex-col h-full', className)}>
       {/* 模式切换标签（移动端显示） */}
       {!isDesktop && (
-        <div className="flex gap-2 p-4 pb-0">
+        <div className="flex gap-2 p-3 pb-0">
           <button
             onClick={() => onModeChange('draw')}
             className={cn(
-              'flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-medium transition-all',
+              'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-medium transition-all',
               activeMode === 'draw'
                 ? 'bg-[var(--color-primary)] text-white shadow-[var(--shadow-primary)]'
                 : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)]'
             )}
           >
-            <Palette className="w-5 h-5" />
-            <span>AI 绘图</span>
+            <Palette className="w-4 h-4" />
+            <span className="text-sm">AI 绘图</span>
           </button>
           <button
             onClick={() => onModeChange('chat')}
             className={cn(
-              'flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-medium transition-all',
+              'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-medium transition-all',
               activeMode === 'chat'
                 ? 'bg-[var(--color-primary)] text-white shadow-[var(--shadow-primary)]'
                 : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)]'
             )}
           >
-            <MessageSquare className="w-5 h-5" />
-            <span>智能对话</span>
+            <MessageSquare className="w-4 h-4" />
+            <span className="text-sm">智能对话</span>
           </button>
         </div>
       )}
@@ -93,7 +114,15 @@ export const CreateView: React.FC<CreateViewProps> = ({
               transition={{ duration: 0.2 }}
               className="h-full"
             >
-              <DrawPanel />
+              <DrawPanel 
+                onImageGenerated={onImageGenerated}
+                isGenerating={isGenerating}
+                genStartTime={genStartTime}
+                onStartGeneration={onStartGeneration}
+                history={history}
+                onPreviewImage={onPreviewImage}
+                showToast={showToast}
+              />
             </motion.div>
           ) : (
             <motion.div
@@ -104,7 +133,7 @@ export const CreateView: React.FC<CreateViewProps> = ({
               transition={{ duration: 0.2 }}
               className="h-full"
             >
-              <ChatPanel />
+              <ChatPanel history={history} />
             </motion.div>
           )}
         </AnimatePresence>

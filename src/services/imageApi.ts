@@ -12,6 +12,25 @@ const LAF_APP_BASE_URL = import.meta.env.VITE_LAF_APP_URL || 'https://ax0rcpp85w
 /** Full image generation API endpoint */
 const IMAGE_API_URL = `${LAF_APP_BASE_URL}/generate-image`;
 
+/** Direct API base URL for local fetch (uses Vite proxy in dev) */
+const DIRECT_API_URL = '/api/v1/images/generations';
+/** Auth token for direct API */
+const AUTH_TOKEN = import.meta.env.VITE_API_TOKEN || 'QC-3832b621c6e6ef01e7e65bd6811a875e-ce9870a4261b87deeec35f4bad62f57f';
+/** Whether to use cloud proxy */
+export const getUseCloudProxy = () => {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('use_cloud_proxy');
+    if (saved !== null) return saved === 'true';
+  }
+  return import.meta.env.VITE_USE_CLOUD_PROXY === 'true';
+};
+
+export const setUseCloudProxy = (value: boolean) => {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('use_cloud_proxy', value.toString());
+  }
+};
+
 /** Default model */
 const DEFAULT_MODEL = 'Doubao-Seedream-4.5';
 
@@ -43,7 +62,7 @@ export type AspectRatioKey = keyof typeof ASPECT_RATIOS;
  */
 export async function generateImage(
   prompt: string,
-  options: ImageGenerationOptions = {}
+  options: ImageGenerationOptions & { signal?: AbortSignal } = {}
 ): Promise<ImageGenerationResult> {
   const {
     aspectRatio = '1:1',
@@ -51,20 +70,22 @@ export async function generateImage(
     size = '2K',
     scale = 1,
     maxImages = 4,
+    signal,
   } = options;
 
-  // Build aspect ratio string for prompt
-  const ratio = ASPECT_RATIOS[aspectRatio as AspectRatioKey] || ASPECT_RATIOS['1:1'];
-  const promptWithRatio = `${prompt} (aspect ratio: ${ratio.ratio})`;
+  // Build aspect ratio and resolution string for prompt
+  const ratio = ASPECT_RATIOS[aspectRatio as AspectRatioKey] || ASPECT_RATIOS["1:1"];
+  const promptWithSettings = `${prompt} (aspect ratio: ${ratio.ratio}, resolution: ${size})`;
 
   // Build request body per API spec
   const body = {
     model: DEFAULT_MODEL,
     input: {
-      prompt: promptWithRatio,
+      prompt: promptWithSettings,
       negative_prompt: negativePrompt,
     },
     extra_body: {
+      enable_image_base64: true,
       size,
       scale,
       watermark: false,
@@ -82,36 +103,99 @@ export async function generateImage(
     },
   };
 
+  const useCloudProxy = getUseCloudProxy();
+  const targetUrl = useCloudProxy ? IMAGE_API_URL : DIRECT_API_URL;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (!useCloudProxy) {
+    headers['Authorization'] = `Bearer ${AUTH_TOKEN}`;
+  }
+
+  console.log('Image API Request:', {
+    mode: useCloudProxy ? 'Cloud Proxy' : 'Local Direct',
+    url: targetUrl,
+    headers: {
+      ...headers,
+      Authorization: headers.Authorization ? headers.Authorization.substring(0, 15) + '...' : undefined
+    },
+    body
+  });
+
   try {
-    const response = await fetch(IMAGE_API_URL, {
+    const response = await fetch(targetUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(body),
+      signal, // 传递 AbortSignal
+    });
+
+    console.log('Image API Response Status:', {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok,
+      mode: useCloudProxy ? 'Cloud Proxy' : 'Local Direct'
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `API error: ${response.status}`);
+      console.error('API Error Details:', errorData);
+      
+      // 处理特定的错误结构
+      const errorMessage = errorData.error?.message || 
+                          errorData.message || 
+                          `请求失败 (${response.status}): ${response.statusText}`;
+      
+      throw new Error(errorMessage);
     }
 
     const data = await response.json();
+    console.log('Image API Raw Response Data:', JSON.stringify(data, null, 2));
 
-    // Parse response: { data: [{ url: string }] }
-    const imageUrls = data.data?.map((item: { url: string }) => item.url) || [];
+    // Parse response: { data: [{ url: string, b64_json?: string, base64?: string }] }
+    const imageUrls = data.data?.map((item: any) => {
+      if (item.url) return item.url;
+      return null;
+    }).filter(Boolean) || [];
+    
+    console.log('Extracted Image URLs:', imageUrls);
+
+    const base64Images = data.data?.map((item: any, index: number) => {
+      // 兼容多种可能的 base64 字段名
+      const b64Data = item.b64_json || item.base64 || item.image_base64;
+      
+      console.log(`Item ${index} base64 detection:`, {
+        has_b64_json: !!item.b64_json,
+        has_base64: !!item.base64,
+        has_image_base64: !!item.image_base64,
+        data_length: b64Data ? b64Data.length : 0
+      });
+
+      if (b64Data) {
+        // 确保 base64 带有正确的 Data URL 前缀
+        if (!b64Data.startsWith('data:')) {
+          return `data:image/png;base64,${b64Data}`;
+        }
+        return b64Data;
+      }
+      return null;
+    }).filter(Boolean) || [];
+
+    console.log('Successfully extracted Base64 images count:', base64Images.length);
 
     return {
       success: true,
       images: imageUrls,
-      prompt: promptWithRatio,
+      base64Images: base64Images.length > 0 ? base64Images : undefined,
+      prompt: prompt, // 返回原始 prompt，不包含尺寸注入
     };
   } catch (error) {
     console.error('Image generation failed:', error);
     return {
       success: false,
       images: [],
-      prompt: promptWithRatio,
+      prompt: prompt, // 返回原始 prompt
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
