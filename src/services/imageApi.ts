@@ -32,7 +32,7 @@ export const setUseCloudProxy = (value: boolean) => {
 };
 
 /** Default model */
-const DEFAULT_MODEL = 'Doubao-Seedream-4.5';
+export const DEFAULT_MODEL = 'Doubao-Seedream-4.5';
 
 /** Aspect ratio presets */
 export const ASPECT_RATIOS = {
@@ -44,6 +44,143 @@ export const ASPECT_RATIOS = {
 } as const;
 
 export type AspectRatioKey = keyof typeof ASPECT_RATIOS;
+
+export interface StreamGenerationOptions extends ImageGenerationOptions {
+  onProgress?: (index: number, total: number, result: { url?: string; b64?: string; error?: string }) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * Generate images with streaming progress
+ */
+export async function generateImageStream(
+  prompt: string,
+  options: StreamGenerationOptions = {}
+): Promise<ImageGenerationResult> {
+  const {
+    aspectRatio = '1:1',
+    negativePrompt = '',
+    size = '2K',
+    scale = 1,
+    maxImages = 4,
+    onProgress,
+    signal,
+  } = options;
+
+  const ratio = ASPECT_RATIOS[aspectRatio as AspectRatioKey] || ASPECT_RATIOS["1:1"];
+  const promptWithSettings = `${prompt.trim()} (aspect ratio: ${ratio.ratio})`;
+  
+  const buildRequestBody = () => ({
+    model: DEFAULT_MODEL,
+    input: {
+      prompt: promptWithSettings,
+      negative_prompt: negativePrompt?.trim() || '',
+    },
+    extra_body: {
+      size,
+      scale,
+      watermark: false,
+      sequential_image_generation: "auto",
+      sequential_image_generation_options: {
+        max_images: 4
+      },
+      provider: {
+        only: [],
+        order: [],
+        sort: null,
+        output_price_range: [],
+        latency_range: [],
+        enable_image_base64: true,
+      },
+      base64: true,
+    },
+  });
+
+  const useCloudProxy = getUseCloudProxy();
+  const targetUrl = useCloudProxy ? IMAGE_API_URL : DIRECT_API_URL;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (!useCloudProxy) {
+    headers['Authorization'] = `Bearer ${AUTH_TOKEN}`;
+  }
+
+  const allImages: string[] = [];
+  const allBase64: string[] = [];
+  let hasError = false;
+  let lastErrorMessage = '';
+
+  // 串行请求以实现“生成一张显示一张”的效果
+  for (let i = 0; i < maxImages; i++) {
+    if (signal?.aborted) break;
+
+    // 如果不是第一张，增加时间间隔避免请求过快
+    if (i > 0) {
+      await new Promise(resolve => setTimeout(resolve, 1000)); // 间隔 1 秒
+    }
+
+    const body = buildRequestBody();
+    console.log('Image Stream Request:', {
+      url: targetUrl,
+      method: 'POST',
+      headers,
+      body
+    });
+
+    try {
+      const response = await fetch(targetUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body), // 每次请求 1 张
+        signal,
+      });
+
+      // Log raw response status and headers
+      console.log('Image Stream Response Status:', response.status, response.statusText);
+
+      if (!response.ok) {
+        let errorMessage = `请求失败 (${response.status})`;
+        try {
+          const errorData = await response.json();
+          console.log('Image Stream Error Response Body:', errorData);
+          errorMessage = errorData.error?.message || errorData.message || errorMessage;
+          if (response.status === 404) {
+            errorMessage = !useCloudProxy ? "请求被拦截或路径错误 (404)。提示：某些特定词语可能触发了屏蔽，请尝试修改提示词或切换‘云模式’。" : "接口 404";
+          }
+        } catch (e) {}
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      console.log('Image Stream Response Body:', data);
+      const item = data.data?.[0];
+      
+      if (item) {
+        const url = item.url;
+        const b64Data = item.b64_json || item.base64 || item.image_base64;
+        const b64 = b64Data ? (b64Data.startsWith('data:') ? b64Data : `data:image/png;base64,${b64Data}`) : undefined;
+        
+        if (url) allImages.push(url);
+        if (b64) allBase64.push(b64);
+        
+        onProgress?.(i + 1, maxImages, { url, b64 });
+      }
+    } catch (error) {
+      hasError = true;
+      lastErrorMessage = error instanceof Error ? error.message : 'Unknown error';
+      onProgress?.(i + 1, maxImages, { error: lastErrorMessage });
+    }
+  }
+
+  return {
+    success: !hasError || allImages.length > 0,
+    images: allImages,
+    base64Images: allBase64,
+    prompt,
+    error: hasError ? lastErrorMessage : undefined
+  };
+}
 
 /**
  * Generate images using Doubao-Seedream-4.5 model
@@ -73,25 +210,24 @@ export async function generateImage(
     signal,
   } = options;
 
-  // Build aspect ratio and resolution string for prompt
+  // Build aspect ratio string for prompt (resolution removed as requested)
   const ratio = ASPECT_RATIOS[aspectRatio as AspectRatioKey] || ASPECT_RATIOS["1:1"];
-  const promptWithSettings = `${prompt} (aspect ratio: ${ratio.ratio}, resolution: ${size})`;
+  const promptWithSettings = `${prompt.trim()} (aspect ratio: ${ratio.ratio})`;
 
   // Build request body per API spec
-  const body = {
+  const buildRequestBody = () => ({
     model: DEFAULT_MODEL,
     input: {
       prompt: promptWithSettings,
-      negative_prompt: negativePrompt,
+      negative_prompt: negativePrompt?.trim() || '',
     },
     extra_body: {
-      enable_image_base64: true,
       size,
       scale,
       watermark: false,
-      sequential_image_generation: 'auto',
+      sequential_image_generation: "auto",
       sequential_image_generation_options: {
-        max_images: maxImages,
+        max_images: 4
       },
       provider: {
         only: [],
@@ -99,9 +235,11 @@ export async function generateImage(
         sort: null,
         output_price_range: [],
         latency_range: [],
+        enable_image_base64: true,
       },
+      base64: true,
     },
-  };
+  });
 
   const useCloudProxy = getUseCloudProxy();
   const targetUrl = useCloudProxy ? IMAGE_API_URL : DIRECT_API_URL;
@@ -113,82 +251,79 @@ export async function generateImage(
     headers['Authorization'] = `Bearer ${AUTH_TOKEN}`;
   }
 
-  console.log('Image API Request:', {
-    mode: useCloudProxy ? 'Cloud Proxy' : 'Local Direct',
-    url: targetUrl,
-    headers: {
-      ...headers,
-      Authorization: headers.Authorization ? headers.Authorization.substring(0, 15) + '...' : undefined
-    },
-    body
-  });
-
   try {
+    // 根据 maxImages 决定是单次请求还是多次并发
+    // 如果 API 本身支持一次生成多张（通过 max_images），则直接发送一次请求
+    // 某些模型可能一次只返回一张，如果需要强制批量，可以使用 Promise.all
+    
+    // 目前 API 规范中包含 max_images，我们先尝试单次请求
+    // 如果单次请求只返回一张，后续可以改为并发逻辑
+    const body = buildRequestBody();
+    
+    console.log('Image Generation Full Request:', {
+      url: targetUrl,
+      method: 'POST',
+      headers,
+      body
+    });
+
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal, // 传递 AbortSignal
+      signal,
     });
 
-    console.log('Image API Response Status:', {
-      status: response.status,
-      statusText: response.statusText,
-      ok: response.ok,
-      mode: useCloudProxy ? 'Cloud Proxy' : 'Local Direct'
-    });
+    // Log raw response status and headers
+    console.log('Image Generation Response Status:', response.status, response.statusText);
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('API Error Details:', errorData);
-      
-      // 处理特定的错误结构
-      const errorMessage = errorData.error?.message || 
-                          errorData.message || 
-                          `请求失败 (${response.status}): ${response.statusText}`;
-      
+      let errorMessage = `请求失败 (${response.status})`;
+      try {
+        const errorData = await response.json();
+        console.log('Image Generation Error Response Body:', errorData);
+        console.error('API Error Details:', errorData);
+        // 如果是词语拦截，通常会在 error.message 或 message 中体现
+        errorMessage = errorData.error?.message || errorData.message || errorMessage;
+        
+        // 针对 404 的特殊处理提示
+        if (response.status === 404) {
+          if (!useCloudProxy) {
+            errorMessage = "请求被拦截或路径错误 (404)。提示：某些特定词语可能触发了服务器防火墙的自动屏蔽，请尝试修改提示词或切换到‘云模式’。";
+          } else {
+            errorMessage = "云端接口返回 404，可能包含敏感内容或接口暂时不可用。";
+          }
+        }
+      } catch (e) {
+        console.error('Could not parse error response');
+      }
       throw new Error(errorMessage);
     }
 
     const data = await response.json();
-    console.log('Image API Raw Response Data:', JSON.stringify(data, null, 2));
-
-    // Parse response: { data: [{ url: string, b64_json?: string, base64?: string }] }
-    const imageUrls = data.data?.map((item: any) => {
-      if (item.url) return item.url;
-      return null;
-    }).filter(Boolean) || [];
+    console.log('Image Generation Response Body:', data);
     
-    console.log('Extracted Image URLs:', imageUrls);
-
-    const base64Images = data.data?.map((item: any, index: number) => {
-      // 兼容多种可能的 base64 字段名
+    // 仅打印数据结构，不打印具体内容
+    console.log('Image API Response Structure:', {
+      hasData: !!data.data,
+      count: data.data?.length,
+      firstItemKeys: data.data?.[0] ? Object.keys(data.data[0]) : []
+    });
+    
+    // 解析返回的所有图片（仅保留 Base64）
+    const base64Images = data.data?.map((item: any) => {
       const b64Data = item.b64_json || item.base64 || item.image_base64;
-      
-      console.log(`Item ${index} base64 detection:`, {
-        has_b64_json: !!item.b64_json,
-        has_base64: !!item.base64,
-        has_image_base64: !!item.image_base64,
-        data_length: b64Data ? b64Data.length : 0
-      });
-
       if (b64Data) {
-        // 确保 base64 带有正确的 Data URL 前缀
-        if (!b64Data.startsWith('data:')) {
-          return `data:image/png;base64,${b64Data}`;
-        }
-        return b64Data;
+        return b64Data.startsWith('data:') ? b64Data : `data:image/png;base64,${b64Data}`;
       }
       return null;
     }).filter(Boolean) || [];
 
-    console.log('Successfully extracted Base64 images count:', base64Images.length);
-
     return {
       success: true,
-      images: imageUrls,
-      base64Images: base64Images.length > 0 ? base64Images : undefined,
-      prompt: prompt, // 返回原始 prompt，不包含尺寸注入
+      images: [], // 移除 URL
+      base64Images: base64Images,
+      prompt: prompt,
     };
   } catch (error) {
     console.error('Image generation failed:', error);

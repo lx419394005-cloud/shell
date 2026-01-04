@@ -169,10 +169,11 @@ export async function sendChatMessage(
       body: JSON.stringify(body),
     });
 
-    console.log('Response status:', response.status);
+    console.log('Chat API Response Status:', response.status, response.statusText);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      console.log('Chat API Error Response Body:', errorData);
       console.error('Error response:', errorData);
       throw new Error(errorData.error?.message || `API error: ${response.status}`);
     }
@@ -304,12 +305,16 @@ export async function sendChatMessageSync(
       body: JSON.stringify(body),
     });
 
+    console.log('Chat API Sync Response Status:', response.status, response.statusText);
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      console.log('Chat API Sync Error Response Body:', errorData);
       throw new Error(errorData.error?.message || `API error: ${response.status}`);
     }
 
     const data = await response.json();
+    console.log('Chat API Sync Response Body:', data);
     return data.choices?.[0]?.message?.content || '';
   } catch (error) {
     console.error('Chat request failed:', error);

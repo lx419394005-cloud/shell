@@ -254,31 +254,16 @@ body {
   animation: blink 0.8s infinite;
 }
 
-/* 滚动条样式 */
+/* 滚动条样式 - 全局隐藏 */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #D0D0D0;
-  border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #B0B0B0;
-}
-
-.dark ::-webkit-scrollbar-thumb {
-  background: #404040;
-}
-
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: #505050;
+* {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
 }
 
 /* 隐藏滚动条 */

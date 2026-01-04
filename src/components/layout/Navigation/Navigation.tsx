@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Home, Sparkles, Plus, ChevronLeft, ChevronRight, Palette, MessageSquare, Sun, Moon } from 'lucide-react';
+import { LayoutGrid, Sparkles, Plus, ChevronLeft, ChevronRight, Palette, MessageSquare, Sun, Moon } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
 /** View type */
@@ -26,6 +26,7 @@ export interface NavigationProps {
   className?: string;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  memoryUsage?: string;
 }
 
 /** Navigation item config */
@@ -37,7 +38,7 @@ interface NavItem {
 
 /** Navigation items definition */
 const NAV_ITEMS: NavItem[] = [
-  { view: 'home', icon: <Home className="w-5 h-5" />, label: '图库' },
+  { view: 'home', icon: <LayoutGrid className="w-5 h-5" />, label: '图库' },
   { view: 'create', icon: <Plus className="w-5 h-5" />, label: 'Create' },
 ];
 
@@ -59,40 +60,52 @@ const useIsDesktop = (): boolean => {
  * Navigation button component
  */
 interface NavButtonProps {
-  item: NavItem;
+  icon: React.ReactNode;
+  label: string;
   active: boolean;
   onClick: () => void;
   fullWidth?: boolean;
   collapsed?: boolean;
+  title?: string;
 }
 
-const NavButton: React.FC<NavButtonProps> = ({ item, active, onClick, fullWidth = false, collapsed = false }) => {
+const NavButton: React.FC<NavButtonProps> = ({ 
+  icon, 
+  label, 
+  active, 
+  onClick, 
+  fullWidth = false, 
+  collapsed = false,
+  title
+}) => {
   return (
     <button
       onClick={onClick}
       className={cn(
-        'flex items-center transition-all duration-200 relative',
-        'rounded-xl group',
+        'flex items-center transition-all duration-300 ease-in-out relative',
+        'rounded-xl group active:scale-95',
         fullWidth ? 'w-full' : 'flex-none',
         fullWidth ? 'h-12' : 'h-10 px-4',
         fullWidth ? (collapsed ? 'justify-center px-0' : 'justify-start gap-3 px-4') : 'justify-center gap-1',
         active
           ? 'text-[var(--color-primary)] bg-[var(--color-primary-soft)]'
-          : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)]'
+          : 'text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-surface)]'
       )}
-      title={collapsed ? item.label : undefined}
+      title={collapsed ? title || label : undefined}
     >
-      <div className={cn("transition-transform duration-200", !active && "group-hover:scale-110")}>
-        {item.icon}
+      <div className={cn(
+        "transition-transform duration-300 ease-in-out",
+        "group-hover:scale-110"
+      )}>
+        {icon}
       </div>
-      {!fullWidth && (
-        <span className={cn('font-medium text-xs', active && 'font-semibold')}>
-          {item.label}
-        </span>
-      )}
-      {fullWidth && !collapsed && (
-        <span className={cn('font-medium text-sm whitespace-nowrap overflow-hidden', active && 'font-semibold')}>
-          {item.label}
+      {(!fullWidth || (fullWidth && !collapsed)) && (
+        <span className={cn(
+          'font-medium transition-all duration-300',
+          fullWidth ? 'text-sm whitespace-nowrap overflow-hidden' : 'text-xs',
+          active && 'font-semibold'
+        )}>
+          {label}
         </span>
       )}
     </button>
@@ -112,7 +125,8 @@ export const Navigation: React.FC<NavigationProps> = ({
   onToggleTheme,
   className,
   collapsed = false,
-  onToggleCollapse
+  onToggleCollapse,
+  memoryUsage
 }) => {
   const isDesktop = useIsDesktop();
 
@@ -159,35 +173,23 @@ export const Navigation: React.FC<NavigationProps> = ({
               </span>
             </div>
           )}
-          <button
-            onClick={onOpenDraw}
-            className={cn(
-              'flex items-center transition-all duration-200 rounded-xl group h-12 w-full',
-              collapsed ? 'justify-center' : 'gap-3 px-4',
-              activeView === 'create' && createMode === 'draw'
-                ? 'bg-[var(--gradient-primary)] text-white shadow-md'
-                : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]'
-            )}
-            title={collapsed ? "AI 绘图" : undefined}
-          >
-            <Palette className={cn("w-5 h-5", activeView === 'create' && createMode === 'draw' ? "text-white" : "text-[var(--color-primary)]")} />
-            {!collapsed && <span className="font-semibold text-sm">AI 绘图</span>}
-          </button>
+          <NavButton
+            onClick={onOpenDraw || (() => {})}
+            active={activeView === 'create' && createMode === 'draw'}
+            icon={<Palette className="w-5 h-5" />}
+            label="AI 绘图"
+            fullWidth
+            collapsed={collapsed}
+          />
           
-          <button
-            onClick={onOpenChat}
-            className={cn(
-              'flex items-center transition-all duration-200 rounded-xl group h-12 w-full',
-              collapsed ? 'justify-center' : 'gap-3 px-4',
-              activeView === 'create' && createMode === 'chat'
-                ? 'bg-[var(--gradient-primary)] text-white shadow-md'
-                : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]'
-            )}
-            title={collapsed ? "智能对话" : undefined}
-          >
-            <MessageSquare className={cn("w-5 h-5", activeView === 'create' && createMode === 'chat' ? "text-white" : "text-[var(--color-primary)]")} />
-            {!collapsed && <span className="font-semibold text-sm">智能对话</span>}
-          </button>
+          <NavButton
+            onClick={onOpenChat || (() => {})}
+            active={activeView === 'create' && createMode === 'chat'}
+            icon={<MessageSquare className="w-5 h-5" />}
+            label="智能对话"
+            fullWidth
+            collapsed={collapsed}
+          />
         </div>
 
         {/* Navigation Items */}
@@ -202,7 +204,8 @@ export const Navigation: React.FC<NavigationProps> = ({
           {NAV_ITEMS.filter(item => item.view !== 'create').map((item) => (
             <NavButton
               key={item.view}
-              item={item}
+              icon={item.icon}
+              label={item.label}
               active={activeView === item.view}
               onClick={() => onViewChange(item.view)}
               fullWidth
@@ -213,41 +216,79 @@ export const Navigation: React.FC<NavigationProps> = ({
 
         {/* Collapse Toggle & Theme Toggle */}
         <div className="mt-auto flex flex-col gap-2">
-          <button
-            onClick={onToggleTheme}
-            className={cn(
-              "flex items-center justify-center h-10 w-full rounded-xl",
-              "text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)]",
-              "transition-colors duration-200"
-            )}
-            title={isDarkMode ? "切换亮色模式" : "切换暗色模式"}
-          >
-            {collapsed ? (
-              isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />
-            ) : (
-              <div className="flex items-center gap-3 px-2 w-full">
-                {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-                <span className="text-sm font-medium">{isDarkMode ? '亮色模式' : '暗色模式'}</span>
-              </div>
-            )}
-          </button>
+          {/* Theme Toggle & Memory Usage */}
+          <div className="px-2 mb-2">
+            <div className={cn(
+              "flex flex-col gap-3 p-3 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] transition-all duration-300",
+              collapsed && "items-center px-1"
+            )}>
+              <button
+                onClick={onToggleTheme || (() => {})}
+                className={cn(
+                  "flex items-center gap-3 w-full transition-all group",
+                  collapsed ? "justify-center" : "justify-between"
+                )}
+                title={isDarkMode ? "切换亮色模式" : "切换暗色模式"}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-1.5 rounded-lg bg-[var(--color-bg-card)] border border-[var(--color-border)] group-hover:border-[var(--color-primary)] transition-colors">
+                    {isDarkMode ? <Sun className="w-4 h-4 text-orange-400" /> : <Moon className="w-4 h-4 text-indigo-400" />}
+                  </div>
+                  {!collapsed && <span className="text-xs font-semibold text-[var(--color-text)]">{isDarkMode ? '亮色模式' : '暗色模式'}</span>}
+                </div>
+                {!collapsed && (
+                  <div className={cn(
+                    "w-8 h-4 rounded-full p-0.5 transition-colors",
+                    isDarkMode ? "bg-[var(--color-primary)]" : "bg-[var(--color-border)]"
+                  )}>
+                    <div className={cn(
+                      "w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-300",
+                      isDarkMode ? "translate-x-4" : "translate-x-0"
+                    )} />
+                  </div>
+                )}
+              </button>
 
-          <button
-            onClick={onToggleCollapse}
-            className={cn(
-              "flex items-center justify-center h-10 w-full rounded-xl",
-              "text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)]",
-              "transition-colors duration-200"
-            )}
+              {memoryUsage && (
+                <>
+                  {!collapsed && <div className="h-px bg-[var(--color-border)]/50 mx-1" />}
+                  <div className={cn(
+                    "flex flex-col gap-1.5",
+                    collapsed && "items-center"
+                  )}>
+                    {!collapsed ? (
+                      <>
+                        <div className="flex items-center justify-between text-[9px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider">
+                          <span>存储占用</span>
+                          <span className="text-[var(--color-text)]">{memoryUsage} MB</span>
+                        </div>
+                        <div className="h-1 w-full bg-[var(--color-bg-card)] rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-[var(--gradient-primary)] transition-all duration-500" 
+                            style={{ width: `${Math.min(parseFloat(memoryUsage) / 50, 100)}%` }}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-[9px] font-bold text-[var(--color-primary)]" title={`存储: ${memoryUsage} MB`}>
+                        {Math.round(parseFloat(memoryUsage))}M
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          <NavButton
+            onClick={onToggleCollapse || (() => {})}
+            active={false}
+            icon={collapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
+            label="收起侧边栏"
+            fullWidth
+            collapsed={collapsed}
             title={collapsed ? "展开" : "收起"}
-          >
-            {collapsed ? <ChevronRight className="w-5 h-5" /> : (
-              <div className="flex items-center gap-3 px-2 w-full">
-                <ChevronLeft className="w-5 h-5" />
-                <span className="text-sm font-medium">收起侧边栏</span>
-              </div>
-            )}
-          </button>
+          />
         </div>
       </nav>
     );
@@ -265,7 +306,8 @@ export const Navigation: React.FC<NavigationProps> = ({
       {NAV_ITEMS.map((item) => (
         <NavButton
           key={item.view}
-          item={item}
+          icon={item.icon}
+          label={item.label}
           active={activeView === item.view}
           onClick={() => onViewChange(item.view)}
         />

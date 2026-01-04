@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Settings2, ImageIcon, Clock, AlertCircle, X, Loader2, Wand2, RotateCcw } from 'lucide-react';
+import { Sparkles, Settings2, ImageIcon, AlertCircle, X, Loader2, Wand2, RotateCcw, Trash2, Download } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { ASPECT_RATIOS, type AspectRatioKey, getUseCloudProxy, setUseCloudProxy } from '@/services/imageApi';
 import { optimizePrompt } from '@/services/chatApi';
@@ -22,13 +22,61 @@ export interface DrawPanelProps {
   genStartTime?: number | null;
   /** Start generation callback */
   onStartGeneration?: (prompt: string, options: any) => Promise<void>;
+  /** Stop generation callback */
+  onStopGeneration?: () => void;
+  /** Image generated callback */
+  onImageGenerated?: (images: string[], prompt: string) => void;
   /** All image history for feed style */
   history?: any[];
   /** Preview image callback */
-  onPreviewImage?: (image: string, allImages: string[], index: number) => void;
+  onPreviewImage?: (item: any, allItems: any[], index: number) => void;
   /** Toast callback */
   showToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
+  /** Delete group callback */
+  onDeleteGroup?: (groupId: string) => void;
+  /** Delete image callback */
+  onDeleteImage?: (id: string) => Promise<void> | void;
 }
+
+/**
+ * 比例图标组件
+ */
+const RatioIcon = ({ ratio, active, className }: { ratio: string; active?: boolean; className?: string }) => {
+  const getRect = () => {
+    switch (ratio) {
+      case '1:1': return { width: 12, height: 12 };
+      case '4:3': return { width: 14, height: 10.5 };
+      case '3:4': return { width: 10.5, height: 14 };
+      case '16:9': return { width: 16, height: 9 };
+      case '9:16': return { width: 9, height: 16 };
+      default: return null;
+    }
+  };
+
+  const rect = getRect();
+  if (!rect) return null;
+
+  return (
+    <div 
+      className={cn(
+        "flex items-center justify-center transition-all duration-300",
+        className
+      )}
+    >
+      <div 
+        style={{ 
+          width: `${rect.width}px`, 
+          height: `${rect.height}px`,
+          borderWidth: '1.5px'
+        }}
+        className={cn(
+          "rounded-[2px] border-current transition-all duration-300",
+          active ? "opacity-100" : "opacity-40"
+        )}
+      />
+    </div>
+  );
+};
 
 /** Resolution presets */
 const RESOLUTIONS = [
@@ -42,17 +90,24 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
   isGenerating: isGeneratingProp,
   genStartTime: genStartTimeProp,
   onStartGeneration,
+  onStopGeneration,
   history = [],
   onPreviewImage,
   showToast,
+  onDeleteGroup,
+  onDeleteImage,
 }) => {
   // State
   const [prompt, setPrompt] = useState('');
-  const [negativePrompt, setNegativePrompt] = useState('blurry, low quality, distorted, deformed');
+  const [negativePrompt] = useState('blurry, low quality, distorted, deformed');
   const [aspectRatio, setAspectRatio] = useState<AspectRatioKey>('1:1');
   const [resolution, setResolution] = useState<'2K' | '4K'>('2K');
-  const [imageCount, setImageCount] = useState<number>(4);
+  const [maxImages] = useState<number>(4);
   const [useCloudProxy, setUseCloudProxyState] = useState(getUseCloudProxy());
+  
+  // 批量操作状态
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
   
   // 使用 prop 或本地 fallback
   const isGenerating = isGeneratingProp ?? false;
@@ -97,11 +152,25 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
   // 滚动引用
   const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const isInitialMount = useRef(true);
+  const prevHistoryLength = useRef(groupedHistory.length);
 
   // 自动滚动到底部
   useEffect(() => {
     if (endRef.current) {
-      endRef.current.scrollIntoView({ behavior: 'smooth' });
+      // 如果是初次挂载，直接瞬间滚动到底部，不显示动画
+      if (isInitialMount.current) {
+        endRef.current.scrollIntoView({ behavior: 'auto' });
+        isInitialMount.current = false;
+        return;
+      }
+
+      // 如果正在生成，或者历史记录增加了，则平滑滚动
+      if (isGenerating || groupedHistory.length > prevHistoryLength.current) {
+        endRef.current.scrollIntoView({ behavior: 'smooth' });
+      }
+      
+      prevHistoryLength.current = groupedHistory.length;
     }
   }, [groupedHistory.length, isGenerating]);
 
@@ -169,7 +238,7 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
           aspectRatio,
           negativePrompt,
           size: resolution,
-          imageCount,
+          maxImages,
         });
         // 生成成功后清空当前输入框
         setPrompt('');
@@ -181,36 +250,128 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
     }
   };
 
+  // 批量操作处理函数
+  const toggleSelectionMode = () => {
+    setIsSelectionMode(!isSelectionMode);
+    setSelectedIds(new Set());
+  };
+
+  const toggleSelectImage = (id: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
+  };
+
+  const handleSelectAll = () => {
+    const allIds = history.filter(item => item.status === 'success').map(item => item.id);
+    if (selectedIds.size === allIds.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(allIds));
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`确定要删除选中的 ${selectedIds.size} 张图片吗？`)) return;
+
+    try {
+      for (const id of Array.from(selectedIds)) {
+        await onDeleteImage?.(id);
+      }
+      showToast?.(`已成功删除 ${selectedIds.size} 张图片`, 'success');
+      setSelectedIds(new Set());
+      setIsSelectionMode(false);
+    } catch (err) {
+      showToast?.('批量删除失败，请重试', 'error');
+    }
+  };
+
+  const handleBatchDownload = async () => {
+    if (selectedIds.size === 0) return;
+    
+    const selectedItems = history.filter(item => selectedIds.has(item.id));
+    
+    showToast?.(`正在导出 ${selectedIds.size} 张图片...`, 'info');
+    
+    // 逐个下载（由于是 Base64，浏览器通常允许并发触发下载）
+    selectedItems.forEach((item, index) => {
+      setTimeout(() => {
+        const link = document.createElement('a');
+        link.href = item.imageUrl;
+        link.download = `pics-ai-${Date.now()}-${index + 1}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }, index * 200); // 增加延迟避免浏览器拦截
+    });
+  };
+
   return (
     <div className={cn('relative h-full bg-[var(--color-bg)] overflow-hidden flex flex-col', className)}>
       {/* Header - 保持简洁 */}
       <div className="px-4 sm:px-6 py-2 sm:py-3 flex items-center justify-between flex-shrink-0 z-20 bg-[var(--color-bg)]/80 backdrop-blur-md border-b border-[var(--color-border)]">
         <div className="flex items-center gap-3 sm:gap-4">
-          <h2 className="text-lg sm:text-xl font-bold text-[var(--color-text)]">
+          <h2 className="text-lg sm:text-xl font-bold text-[var(--color-text)] flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-[var(--color-primary)]" />
             AI 绘画
           </h2>
+          
+          {history.length > 0 && (
+            <>
+              <div className="h-4 w-px bg-[var(--color-border)] hidden sm:block" />
+              <button
+                onClick={toggleSelectionMode}
+                className={cn(
+                  "px-3 py-1 rounded-full text-xs font-medium transition-all",
+                  isSelectionMode
+                    ? "bg-[var(--color-primary)] text-white"
+                    : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] border border-[var(--color-border)]"
+                )}
+              >
+                {isSelectionMode ? "取消选择" : "批量操作"}
+              </button>
+            </>
+          )}
         </div>
         
-        {/* Proxy Switcher */}
-        <button
-          onClick={toggleProxyMode}
-          className={cn(
-            "flex items-center gap-2 px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-all border",
-            useCloudProxy 
-              ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)] border-[var(--color-primary-soft)]"
-              : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)]"
+        <div className="flex items-center gap-2">
+          {isSelectionMode && (
+            <div className="flex items-center gap-2 mr-2">
+              <button
+                onClick={handleSelectAll}
+                className="px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-surface)] text-[var(--color-text-secondary)] border border-[var(--color-border)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-all"
+              >
+                {selectedIds.size === history.filter(item => item.status === 'success').length ? "取消全选" : "全选"}
+              </button>
+            </div>
           )}
-        >
-          <div className={cn(
-            "w-1.5 h-1.5 rounded-full animate-pulse",
-            useCloudProxy ? "bg-[var(--color-primary)]" : "bg-gray-400"
-          )} />
-          {useCloudProxy ? "云模式" : "直连"}
-        </button>
+          
+          {/* Proxy Switcher */}
+          <button
+            onClick={toggleProxyMode}
+            className={cn(
+              "flex items-center gap-2 px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-all border",
+              useCloudProxy 
+                ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)] border-[var(--color-primary-soft)]"
+                : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)]"
+            )}
+          >
+            <div className={cn(
+              "w-1.5 h-1.5 rounded-full animate-pulse",
+              useCloudProxy ? "bg-[var(--color-primary)]" : "bg-gray-400"
+            )} />
+            {useCloudProxy ? "云模式" : "直连"}
+          </button>
+        </div>
       </div>
 
       {/* Main Content - Feed Style */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 custom-scrollbar" ref={scrollRef}>
+      <div className="flex-1 overflow-y-auto px-4 py-4" ref={scrollRef}>
         <div className="max-w-5xl mx-auto space-y-10 pb-40">
           {/* 历史记录流 */}
           {groupedHistory.map((group, groupIdx) => {
@@ -251,9 +412,10 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
                       {group.prompt}
                     </p>
                     <div className="flex items-center gap-2 text-[10px] text-[var(--color-text-muted)] font-medium">
-                      <span>图片 {group.images.length}</span>
-                      <span className="opacity-30">|</span>
-                      <span>{group.aspectRatio || '1:1'}</span>
+                      <div className="flex items-center gap-1">
+                        <RatioIcon ratio={group.aspectRatio || '1:1'} className="scale-75" />
+                        <span>{group.aspectRatio || '1:1'}</span>
+                      </div>
                       <span className="opacity-30">|</span>
                       <span>{group.size || '2K'}</span>
                       <span className="opacity-30">|</span>
@@ -264,33 +426,121 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
                   {/* 图片网格 */}
                   <div className={cn(
                     "grid gap-2 sm:gap-3",
-                    group.images.length === 1 ? "grid-cols-1 max-w-md" : 
-                    group.images.length === 2 ? "grid-cols-2" : 
-                    "grid-cols-2 md:grid-cols-4"
+                    group.images.length === 1 ? "grid-cols-1 max-w-[280px] sm:max-w-xs" : 
+                    group.images.length === 2 ? "grid-cols-2 max-w-lg" : 
+                    "grid-cols-2 md:grid-cols-4 max-w-4xl"
                   )}>
                     {group.images.map((item: any, imgIdx: number) => (
                       <motion.div
-                        key={`${group.id}-${imgIdx}`}
+                        key={item.id || `${group.id}-${imgIdx}`}
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: imgIdx * 0.05 }}
-                        className="relative aspect-[3/4] rounded-xl overflow-hidden shadow-sm group bg-[var(--color-surface)] border border-[var(--color-border)] cursor-pointer"
-                        onClick={() => onPreviewImage?.(item.imageUrl, group.images.map((img: any) => img.imageUrl), imgIdx)}
+                        className={cn(
+                          "relative aspect-[3/4] rounded-xl overflow-hidden shadow-sm group bg-[var(--color-surface)] border transition-all duration-300 flex items-center justify-center",
+                          isSelectionMode ? "cursor-default" : "cursor-pointer",
+                          selectedIds.has(item.id) 
+                            ? "border-[var(--color-primary)] ring-2 ring-[var(--color-primary)] ring-offset-2 ring-offset-[var(--color-bg)]" 
+                            : "border-[var(--color-border)]"
+                        )}
+                        onClick={() => {
+                          if (item.status === 'loading') return;
+                          if (isSelectionMode) {
+                            toggleSelectImage(item.id);
+                          } else {
+                            onPreviewImage?.(item, group.images, imgIdx);
+                          }
+                        }}
                       >
-                        <img
-                          src={item.imageUrl}
-                          alt={`Generated ${imgIdx + 1}`}
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                        />
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                          <div className="p-2 bg-white/20 backdrop-blur-md rounded-full text-white">
-                            <ImageIcon className="w-4 h-4" />
+                        {item.status === 'loading' ? (
+                          <div className="flex flex-col items-center gap-2">
+                            <Loader2 className="w-5 h-5 text-[var(--color-primary)] animate-spin" />
+                            <span className="text-[10px] text-[var(--color-text-muted)]">生成中...</span>
                           </div>
-                        </div>
+                        ) : item.status === 'error' ? (
+                          <div className="flex flex-col items-center gap-2 px-3 text-center">
+                            <AlertCircle className="w-5 h-5 text-red-500" />
+                            <span className="text-[10px] text-red-500 line-clamp-2">{item.error || '生成失败'}</span>
+                          </div>
+                        ) : (
+                          <>
+                            <img
+                              src={item.imageUrl}
+                              alt={`Generated ${imgIdx + 1}`}
+                              className={cn(
+                                "w-full h-full object-cover transition-transform duration-500",
+                                !isSelectionMode && "group-hover:scale-110"
+                              )}
+                              loading="lazy"
+                            />
+                            
+                            {/* 选择指示器 */}
+                            {isSelectionMode && (
+                              <div className="absolute top-2 right-2 z-10">
+                                <div className={cn(
+                                  "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all",
+                                  selectedIds.has(item.id)
+                                    ? "bg-[var(--color-primary)] border-[var(--color-primary)] text-white shadow-lg"
+                                    : "bg-black/20 border-white/50 backdrop-blur-sm"
+                                )}>
+                                  {selectedIds.has(item.id) && (
+                                    <motion.svg 
+                                      initial={{ scale: 0 }}
+                                      animate={{ scale: 1 }}
+                                      className="w-3.5 h-3.5" 
+                                      fill="none" 
+                                      viewBox="0 0 24 24" 
+                                      stroke="currentColor" 
+                                      strokeWidth={3}
+                                    >
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                    </motion.svg>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {!isSelectionMode && (
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                <div className="p-2 bg-white/20 backdrop-blur-md rounded-full text-white">
+                                  <ImageIcon className="w-4 h-4" />
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )}
                       </motion.div>
                     ))}
                   </div>
+
+
+                  {/* 生成进度提示 - 仅在当前组有正在生成的图片时显示 */}
+                  {group.images.some((item: any) => item.status === 'loading') && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onStopGeneration?.();
+                        }}
+                        className="group/stop flex items-center gap-2 px-3 py-1 bg-[var(--color-primary-soft)] hover:bg-red-500/10 rounded-full border border-[var(--color-primary-soft)] hover:border-red-500/20 transition-all"
+                        title="点击停止生成"
+                      >
+                        <Loader2 className="w-3 h-3 text-[var(--color-primary)] animate-spin group-hover/stop:hidden" />
+                        <X className="w-3 h-3 text-red-500 hidden group-hover/stop:block" />
+                        <span className="text-[10px] font-medium text-[var(--color-primary)] group-hover/stop:text-red-500">
+                          正在生成 ({group.images.filter((item: any) => item.status === 'success').length}/{group.images.length})
+                        </span>
+                        <span className="text-[10px] font-medium text-red-500 hidden group-hover/stop:inline ml-1">
+                          (点击停止)
+                        </span>
+                        {startTime && (
+                          <span className="text-[10px] text-[var(--color-primary)]/60 font-mono ml-1 group-hover/stop:hidden">
+                            {elapsedTime}s
+                          </span>
+                        )}
+                      </button>
+                    </div>
+                  )}
 
                   {/* 操作按钮 */}
                   <div className="flex items-center gap-2 mt-1">
@@ -308,6 +558,14 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
                       <Sparkles className="w-3.5 h-3.5" />
                       再次生成
                     </button>
+                    <button 
+                      onClick={() => onDeleteGroup?.(group.id)}
+                      className="px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-full text-[11px] font-medium text-red-500 flex items-center gap-1.5 hover:bg-red-500/10 transition-colors ml-auto"
+                      title="删除此组记录"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      删除
+                    </button>
                   </div>
                 </div>
               </div>
@@ -323,62 +581,63 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
             </div>
           )}
 
-          {/* 生成中的状态 */}
-          {isGenerating && (
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-[var(--color-primary-soft)] flex items-center justify-center">
-                  <Loader2 className="w-5 h-5 text-[var(--color-primary)] animate-spin" />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium text-[var(--color-text)]">正在为您生成精美图片...</span>
-                  <div className="flex items-center gap-2 text-[var(--color-primary)] font-mono text-xs">
-                    <Clock className="w-3 h-3" />
-                    <span>{elapsedTime}s</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 错误提示 - 对话流样式 */}
-          <AnimatePresence>
-            {error && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="flex justify-start"
-              >
-                <div className="flex gap-3 max-w-[85%]">
-                  <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center flex-shrink-0">
-                    <AlertCircle className="w-5 h-5 text-red-500" />
-                  </div>
-                  <div className="relative p-3 rounded-2xl bg-red-50 border border-red-100 text-red-600">
-                    <div className="flex items-center justify-between gap-4 mb-1">
-                      <span className="text-xs font-bold">系统提示</span>
-                      <button 
-                        onClick={() => setError(null)}
-                        className="p-0.5 hover:bg-red-200/50 rounded-full transition-colors"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                    <p className="text-sm leading-relaxed">{error}</p>
-                    <div className="absolute left-0 top-4 -translate-x-1/2 w-2 h-2 bg-red-50 border-l border-b border-red-100 rotate-45" />
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
           {/* 滚动锚点 */}
           <div ref={endRef} className="h-px" />
         </div>
       </div>
 
       {/* Input Area */}
-      <div className="absolute bottom-0 left-0 right-0 px-4 pb-4 sm:pb-6 flex justify-center z-20 bg-gradient-to-t from-[var(--color-bg)] via-[var(--color-bg)]/80 to-transparent pt-10">
+      <div className="absolute bottom-0 left-0 right-0 z-30">
+        {/* 批量操作工具栏 */}
+        <AnimatePresence>
+          {isSelectionMode && (
+            <motion.div
+              initial={{ y: 100, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 100, opacity: 0 }}
+              className="absolute bottom-[calc(100%+16px)] left-4 right-4 z-40"
+            >
+              <div className="max-w-xl mx-auto bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-2xl shadow-2xl p-3 flex items-center justify-between backdrop-blur-xl">
+                <div className="flex items-center gap-3 px-2">
+                  <span className="text-sm font-bold text-[var(--color-primary)]">
+                    已选择 {selectedIds.size} 项
+                  </span>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleBatchDownload}
+                    disabled={selectedIds.size === 0}
+                    className="flex items-center gap-2 px-4 py-2 bg-[var(--color-primary)] text-white rounded-xl text-xs font-bold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[var(--color-primary)]/20"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    批量导出
+                  </button>
+                  
+                  <button
+                    onClick={handleBatchDelete}
+                    disabled={selectedIds.size === 0}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-500 border border-red-500/20 rounded-xl text-xs font-bold hover:bg-red-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    批量删除
+                  </button>
+                  
+                  <div className="w-px h-6 bg-[var(--color-border)] mx-1" />
+                  
+                  <button
+                    onClick={toggleSelectionMode}
+                    className="p-2 text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <div className="px-4 pb-4 sm:pb-6 flex justify-center bg-gradient-to-t from-[var(--color-bg)] via-[var(--color-bg)]/80 to-transparent pt-10">
         <div className="w-full max-w-3xl bg-[var(--color-bg-card)]/80 backdrop-blur-xl rounded-2xl sm:rounded-3xl shadow-2xl border border-[var(--color-border)] p-3">
           <div className="flex items-start gap-3 mb-2">
             <button 
@@ -417,7 +676,8 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
                 )}
               >
                 <Settings2 className="w-3.5 h-3.5" />
-                <span>{aspectRatio} · {resolution} · {imageCount}张</span>
+                <RatioIcon ratio={aspectRatio} active={showSettings} className="scale-75 -mx-1" />
+                <span>{aspectRatio} · {resolution} · {maxImages}张</span>
               </button>
 
               <button 
@@ -478,12 +738,13 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
                                 setAspectRatio(key);
                               }}
                               className={cn(
-                                "py-2.5 rounded-xl text-xs font-semibold border transition-all",
+                                "flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl text-[10px] font-bold border transition-all",
                                 aspectRatio === key
                                   ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)] shadow-lg shadow-[var(--color-primary)]/20"
                                   : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-text-muted)]"
                               )}
                             >
+                              <RatioIcon ratio={key} active={aspectRatio === key} className="mb-0.5" />
                               {key}
                             </button>
                           ))}
@@ -508,29 +769,6 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
                               )}
                             >
                               {res.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* 数量选择 */}
-                      <div>
-                        <label className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider block mb-3">生成数量</label>
-                        <div className="flex gap-2">
-                          {[1, 2, 4].map((num) => (
-                            <button
-                              key={num}
-                              onClick={() => {
-                                setImageCount(num);
-                              }}
-                              className={cn(
-                                "flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all",
-                                imageCount === num
-                                  ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)] shadow-lg shadow-[var(--color-primary)]/20"
-                                  : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-text-muted)]"
-                              )}
-                            >
-                              {num}张
                             </button>
                           ))}
                         </div>
@@ -567,6 +805,7 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
           </div>
         </div>
       </div>
+    </div>
 
       {/* Error message */}
       <AnimatePresence>

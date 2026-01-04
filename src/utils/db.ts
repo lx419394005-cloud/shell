@@ -29,7 +29,7 @@ const initDB = (): Promise<IDBDatabase> => {
 /**
  * 保存图片到数据库
  */
-export const saveImageToDB = async (item: { id: string; prompt: string; imageUrl: string; timestamp: number }) => {
+export const saveImageToDB = async (item: any) => {
   const db = await initDB();
   return new Promise<void>((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readwrite');

@@ -93,10 +93,26 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ className, history }) => {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isInitialMount = useRef(true);
+  const prevMessagesLength = useRef(messages.length);
 
   // Auto-scroll to bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesEndRef.current) {
+      // 如果是初次挂载，直接瞬间滚动到底部，不显示动画
+      if (isInitialMount.current) {
+        messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
+        isInitialMount.current = false;
+        return;
+      }
+
+      // 如果消息数量增加了，则平滑滚动
+      if (messages.length > prevMessagesLength.current) {
+        messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      }
+      
+      prevMessagesLength.current = messages.length;
+    }
   }, [messages]);
 
   // Handle send message

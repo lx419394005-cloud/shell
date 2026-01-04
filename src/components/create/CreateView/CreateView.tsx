@@ -11,7 +11,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Palette, MessageSquare, Loader2 } from 'lucide-react';
+import { Palette, MessageSquare } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { DrawPanel } from '../DrawPanel/DrawPanel';
 import { ChatPanel } from '../ChatPanel/ChatPanel';
@@ -35,10 +35,16 @@ export interface CreateViewProps {
   history?: any[];
   /** 启动生成回调 */
   onStartGeneration?: (prompt: string, options: any) => Promise<void>;
+  /** 停止生成回调 */
+  onStopGeneration?: () => void;
   /** 预览图片回调 */
-  onPreviewImage?: (item: any) => void;
+  onPreviewImage?: (item: any, allItems: any[], index: number) => void;
   /** 全局提示回调 */
   showToast?: (message: string, type?: any) => void;
+  /** 删除组回调 */
+  onDeleteGroup?: (groupId: string) => void;
+  /** 删除图片回调 */
+  onDeleteImage?: (id: string) => void;
   /** CSS 类名 */
   className?: string;
 }
@@ -54,8 +60,11 @@ export const CreateView: React.FC<CreateViewProps> = ({
   genStartTime,
   history,
   onStartGeneration,
+  onStopGeneration,
   onPreviewImage,
   showToast,
+  onDeleteGroup,
+  onDeleteImage,
   className,
 }) => {
   const [isDesktop, setIsDesktop] = useState(false);
@@ -119,8 +128,11 @@ export const CreateView: React.FC<CreateViewProps> = ({
                 isGenerating={isGenerating}
                 genStartTime={genStartTime}
                 onStartGeneration={onStartGeneration}
+                onStopGeneration={onStopGeneration}
                 history={history}
                 onPreviewImage={onPreviewImage}
+                onDeleteGroup={onDeleteGroup}
+                onDeleteImage={onDeleteImage}
                 showToast={showToast}
               />
             </motion.div>
