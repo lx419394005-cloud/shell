@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/v1/:path*",
+      "destination": "https://www.aiping.cn/api/v1/:path*"
+    }
+  ]
+}

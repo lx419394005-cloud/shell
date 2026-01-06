@@ -8,8 +8,8 @@
 import type { ChatMessage, ChatOptions, ChatStreamCallback } from '@/types/api';
 import { getActiveApiConfig, formatApiUrl } from '@/utils/apiConfig';
 
-/** API endpoint - Direct connection per API_GUIDE.md */
-const API_BASE_URL = 'https://www.aiping.cn/api/v1';
+/** API endpoint - Uses relative path for Vercel rewrite/Vite proxy */
+const API_BASE_URL = '/api/v1';
 
 /** Default model */
 const DEFAULT_MODEL = 'DeepSeek-V3.2';
