@@ -6,20 +6,14 @@
  */
 
 import type { ImageGenerationOptions, ImageGenerationResult } from '@/types/api';
-import { getActiveApiConfig, formatApiUrl, getUseCloudProxy as getUseCloudProxyFromConfig } from '@/utils/apiConfig';
+import { getActiveApiConfig, formatApiUrl } from '@/utils/apiConfig';
 
 /** API base URL - Cloud function proxy to bypass CORS */
 const LAF_APP_BASE_URL = import.meta.env.VITE_LAF_APP_URL || 'https://ax0rcpp85w.sealosbja.site';
 /** Full image generation API endpoint */
 const IMAGE_API_URL = `${LAF_APP_BASE_URL}/generate-image`;
 
-/** Direct API base URL for local fetch (uses Vite proxy in dev) */
-const DIRECT_API_URL = '/api/v1/images/generations';
-
-/** Resolution presets */
-export const getUseCloudProxy = async () => {
-  return getUseCloudProxyFromConfig();
-};
+/** Resolution presets - 始终使用云函数代理绕过 CORS */
 
 /** Default model */
 export const DEFAULT_MODEL = 'Doubao-Seedream-4.5';
@@ -88,24 +82,10 @@ export async function generateImageStream(
     },
   });
 
-  const useCloudProxy = await getUseCloudProxy();
-  const activeConfig = await getActiveApiConfig('image');
-
-  if (!activeConfig && !useCloudProxy) {
-    throw new Error('请先在设置中配置 API');
-  }
-
-  const targetUrl = activeConfig
-    ? formatApiUrl(activeConfig.baseUrl, '/images/generations')
-    : IMAGE_API_URL;
-
+  // 始终使用云函数代理绕过 CORS
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-
-  if (activeConfig) {
-    headers['Authorization'] = `Bearer ${activeConfig.apiKey}`;
-  }
 
   const allImages: string[] = [];
   const allBase64: string[] = [];
@@ -123,14 +103,14 @@ export async function generateImageStream(
 
     const body = buildRequestBody();
     console.log('Image Stream Request:', {
-      url: targetUrl,
+      url: IMAGE_API_URL,
       method: 'POST',
       headers,
       body
     });
 
     try {
-      const response = await fetch(targetUrl, {
+      const response = await fetch(IMAGE_API_URL, {
         method: 'POST',
         headers,
         body: JSON.stringify(body), // 每次请求 1 张
@@ -147,7 +127,7 @@ export async function generateImageStream(
           console.log('Image Stream Error Response Body:', errorData);
           errorMessage = errorData.error?.message || errorData.message || errorMessage;
           if (response.status === 404) {
-            errorMessage = !useCloudProxy ? "请求被拦截或路径错误 (404)。提示：某些特定词语可能触发了屏蔽，请尝试修改提示词或切换‘云模式’。" : "接口 404";
+            errorMessage = "接口返回 404，可能包含敏感内容或接口暂时不可用";
           }
         } catch (e) {}
         throw new Error(errorMessage);
@@ -244,42 +224,28 @@ export async function generateImage(
     },
   });
 
-  const useCloudProxy = await getUseCloudProxy();
-  const activeConfig = await getActiveApiConfig('image');
-
-  if (!activeConfig && !useCloudProxy) {
-    throw new Error('请先在设置中配置 API');
-  }
-
-  const targetUrl = activeConfig
-    ? formatApiUrl(activeConfig.baseUrl, '/images/generations')
-    : IMAGE_API_URL;
-
+  // 始终使用云函数代理绕过 CORS
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-
-  if (activeConfig) {
-    headers['Authorization'] = `Bearer ${activeConfig.apiKey}`;
-  }
 
   try {
     // 根据 maxImages 决定是单次请求还是多次并发
     // 如果 API 本身支持一次生成多张（通过 max_images），则直接发送一次请求
     // 某些模型可能一次只返回一张，如果需要强制批量，可以使用 Promise.all
-    
+
     // 目前 API 规范中包含 max_images，我们先尝试单次请求
     // 如果单次请求只返回一张，后续可以改为并发逻辑
     const body = buildRequestBody();
-    
+
     console.log('Image Generation Full Request:', {
-      url: targetUrl,
+      url: IMAGE_API_URL,
       method: 'POST',
       headers,
       body
     });
 
-    const response = await fetch(targetUrl, {
+    const response = await fetch(IMAGE_API_URL, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
@@ -297,14 +263,10 @@ export async function generateImage(
         console.error('API Error Details:', errorData);
         // 如果是词语拦截，通常会在 error.message 或 message 中体现
         errorMessage = errorData.error?.message || errorData.message || errorMessage;
-        
+
         // 针对 404 的特殊处理提示
         if (response.status === 404) {
-          if (!useCloudProxy) {
-            errorMessage = "请求被拦截或路径错误 (404)。提示：某些特定词语可能触发了服务器防火墙的自动屏蔽，请尝试修改提示词或切换到‘云模式’。";
-          } else {
-            errorMessage = "云端接口返回 404，可能包含敏感内容或接口暂时不可用。";
-          }
+          errorMessage = "云端接口返回 404，可能包含敏感内容或接口暂时不可用";
         }
       } catch (e) {
         console.error('Could not parse error response');
