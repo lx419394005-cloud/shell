@@ -96,7 +96,7 @@ export async function generateImageStream(
   }
 
   const targetUrl = activeConfig
-    ? formatApiUrl(activeConfig.baseUrl, '/generate-image')
+    ? formatApiUrl(activeConfig.baseUrl, '/images/generations')
     : IMAGE_API_URL;
 
   const headers: Record<string, string> = {
@@ -252,7 +252,7 @@ export async function generateImage(
   }
 
   const targetUrl = activeConfig
-    ? formatApiUrl(activeConfig.baseUrl, '/generate-image')
+    ? formatApiUrl(activeConfig.baseUrl, '/images/generations')
     : IMAGE_API_URL;
 
   const headers: Record<string, string> = {
