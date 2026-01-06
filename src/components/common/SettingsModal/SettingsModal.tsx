@@ -6,7 +6,6 @@ import { cn } from '@/utils/cn';
 import { type ApiConfig } from '@/types';
 import { saveApiConfigToDB, getAllApiConfigsFromDB, deleteApiConfigFromDB } from '@/utils/db';
 import { getActiveApiConfig } from '@/utils/apiConfig';
-import { AUTH_TOKEN } from '@/services/chatApi';
 
 export interface SettingsModalProps {
   isOpen: boolean;
@@ -104,10 +103,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
             <div className="space-y-1">
               <div className="text-sm font-bold text-[var(--color-text)]">
-                {activeChatApi ? activeChatApi.name : '系统默认 (aiping.cn)'}
+                {activeChatApi ? activeChatApi.name : '未配置'}
               </div>
               <div className="text-[10px] text-[var(--color-text-secondary)] truncate font-mono">
-                {activeChatApi ? `${activeChatApi.apiKey.slice(0, 12)}***` : (AUTH_TOKEN ? `${AUTH_TOKEN.slice(0, 12)}***` : '未配置 Token')}
+                {activeChatApi ? `${activeChatApi.apiKey.slice(0, 12)}***` : '请添加 API 配置'}
               </div>
             </div>
           </div>
@@ -119,10 +118,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
             <div className="space-y-1">
               <div className="text-sm font-bold text-[var(--color-text)]">
-                {activeImageApi ? activeImageApi.name : '系统默认 (aiping.cn)'}
+                {activeImageApi ? activeImageApi.name : '未配置'}
               </div>
               <div className="text-[10px] text-[var(--color-text-secondary)] truncate font-mono">
-                {activeImageApi ? `${activeImageApi.apiKey.slice(0, 12)}***` : (AUTH_TOKEN ? `${AUTH_TOKEN.slice(0, 12)}***` : '未配置 Token')}
+                {activeImageApi ? `${activeImageApi.apiKey.slice(0, 12)}***` : '请添加 API 配置'}
               </div>
             </div>
           </div>

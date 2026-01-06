@@ -8,7 +8,6 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Home, LayoutGrid, Sparkles, Plus, ChevronLeft, ChevronRight, Palette, MessageSquare, Sun, Moon, Settings, AlertCircle } from 'lucide-react';
 import { cn } from '@/utils/cn';
-import { AUTH_TOKEN } from '@/services/chatApi';
 import { getActiveApiConfig } from '@/utils/apiConfig';
 
 /** View type */
@@ -161,22 +160,16 @@ export const Navigation: React.FC<NavigationProps> = ({
   // 检查是否有可用 Token
   useEffect(() => {
     const checkToken = async () => {
-      // 1. 检查环境变量 Token
-      if (AUTH_TOKEN) {
-        setHasToken(true);
-        return;
-      }
-
-      // 2. 检查数据库中是否有激活的配置
+      // 检查数据库中是否有激活的配置
       const chatConfig = await getActiveApiConfig('chat');
       const imageConfig = await getActiveApiConfig('image');
-      
+
       setHasToken(!!(chatConfig || imageConfig));
     };
 
     checkToken();
-    
-    // 每隔几秒检查一次，或者在弹窗关闭后检查（这里简单处理，后续可以通过事件总线优化）
+
+    // 每隔几秒检查一次，或者在弹窗关闭后检查
     const timer = setInterval(checkToken, 5000);
     return () => clearInterval(timer);
   }, []);

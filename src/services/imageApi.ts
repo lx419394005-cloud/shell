@@ -7,7 +7,6 @@
 
 import type { ImageGenerationOptions, ImageGenerationResult } from '@/types/api';
 import { getActiveApiConfig, formatApiUrl, getUseCloudProxy as getUseCloudProxyFromConfig } from '@/utils/apiConfig';
-import { AUTH_TOKEN } from './chatApi';
 
 /** API base URL - Cloud function proxy to bypass CORS */
 const LAF_APP_BASE_URL = import.meta.env.VITE_LAF_APP_URL || 'https://ax0rcpp85w.sealosbja.site';
@@ -91,10 +90,14 @@ export async function generateImageStream(
 
   const useCloudProxy = await getUseCloudProxy();
   const activeConfig = await getActiveApiConfig('image');
-  
-  const targetUrl = activeConfig 
-    ? formatApiUrl(activeConfig.baseUrl, '/generate-image') // 这里我们假设自定义 API 也遵循同样的 endpoint 或者用户直接输入完整地址
-    : (useCloudProxy ? IMAGE_API_URL : DIRECT_API_URL);
+
+  if (!activeConfig && !useCloudProxy) {
+    throw new Error('请先在设置中配置 API');
+  }
+
+  const targetUrl = activeConfig
+    ? formatApiUrl(activeConfig.baseUrl, '/generate-image')
+    : IMAGE_API_URL;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -102,8 +105,6 @@ export async function generateImageStream(
 
   if (activeConfig) {
     headers['Authorization'] = `Bearer ${activeConfig.apiKey}`;
-  } else if (!useCloudProxy) {
-    headers['Authorization'] = `Bearer ${AUTH_TOKEN}`;
   }
 
   const allImages: string[] = [];
@@ -246,9 +247,13 @@ export async function generateImage(
   const useCloudProxy = await getUseCloudProxy();
   const activeConfig = await getActiveApiConfig('image');
 
-  const targetUrl = activeConfig 
+  if (!activeConfig && !useCloudProxy) {
+    throw new Error('请先在设置中配置 API');
+  }
+
+  const targetUrl = activeConfig
     ? formatApiUrl(activeConfig.baseUrl, '/generate-image')
-    : (useCloudProxy ? IMAGE_API_URL : DIRECT_API_URL);
+    : IMAGE_API_URL;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -256,8 +261,6 @@ export async function generateImage(
 
   if (activeConfig) {
     headers['Authorization'] = `Bearer ${activeConfig.apiKey}`;
-  } else if (!useCloudProxy) {
-    headers['Authorization'] = `Bearer ${AUTH_TOKEN}`;
   }
 
   try {

@@ -1089,7 +1089,7 @@ const PageContent: React.FC<PageContentProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="h-full w-full flex flex-col relative"
+            className="h-full w-full flex flex-col"
           >
             {/* 可滚动区域 */}
             <div className={cn(
@@ -1251,7 +1251,7 @@ const PageContent: React.FC<PageContentProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="h-full flex flex-col overflow-hidden relative"
+            className="h-full flex flex-col overflow-hidden"
           >
             {/* 创作视图 */}
             <div className="flex-1 h-full min-h-0 overflow-hidden">

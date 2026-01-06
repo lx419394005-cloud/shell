@@ -12,7 +12,7 @@ import { cn } from '@/utils/cn';
 import { ASPECT_RATIOS, type AspectRatioKey, getUseCloudProxy } from '@/services/imageApi';
 import { setUseCloudProxy, getActiveApiConfig } from '@/utils/apiConfig';
 import { uploadToPicUI } from '@/services/picuiApi';
-import { optimizePrompt, AUTH_TOKEN } from '@/services/chatApi';
+import { optimizePrompt } from '@/services/chatApi';
 import { RatioIcon } from '@/components/common/RatioIcon/RatioIcon';
 import { stripPromptCount, injectPromptCount } from '@/utils/prompt';
 
@@ -107,7 +107,7 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
     const loadApiInfo = async () => {
       const config = await getActiveApiConfig('image');
       setActiveApi(config);
-      setHasToken(!!(config || AUTH_TOKEN));
+      setHasToken(!!config);
     };
     loadApiInfo();
   }, []);

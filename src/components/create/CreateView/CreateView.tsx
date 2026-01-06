@@ -116,16 +116,15 @@ export const CreateView: React.FC<CreateViewProps> = ({
 
       {/* 内容区域 */}
       <div className="flex-1 overflow-hidden relative min-h-0">
-        <AnimatePresence mode="wait" initial={false}>
+        <AnimatePresence mode="popLayout" initial={false}>
           {activeMode === 'draw' ? (
             <motion.div
               key="draw"
-              layout
-              initial={{ opacity: 0, x: -20, scale: 1 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, x: 20, scale: 1 }}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
               transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-              className="h-full w-full relative"
+              className="h-full w-full"
             >
               <DrawPanel 
                 onImageGenerated={onImageGenerated}
@@ -143,12 +142,11 @@ export const CreateView: React.FC<CreateViewProps> = ({
           ) : (
             <motion.div
               key="chat"
-              layout
-              initial={{ opacity: 0, x: 20, scale: 1 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, x: -20, scale: 1 }}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-              className="h-full w-full relative"
+              className="h-full w-full"
             >
               <ChatPanel history={history} />
             </motion.div>

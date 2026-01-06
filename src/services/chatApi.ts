@@ -14,8 +14,8 @@ const API_BASE_URL = '/api/v1';
 /** Default model */
 const DEFAULT_MODEL = 'DeepSeek-V3.2';
 
-/** Authorization token - MUST be provided via environment or user config */
-export const AUTH_TOKEN = import.meta.env.VITE_API_TOKEN || '';
+/** Authorization token - Removed default, user must configure their own API */
+export const AUTH_TOKEN = '';
 
 /** System prompt */
 const SYSTEM_PROMPT = `You are a helpful and creative AI assistant. You excel at:
@@ -155,20 +155,22 @@ export async function sendChatMessage(
   }
 
   const activeConfig = await getActiveApiConfig('chat');
-  const targetUrl = activeConfig 
-    ? formatApiUrl(activeConfig.baseUrl, '/chat/completions')
-    : `${API_BASE_URL}/chat/completions`;
-  
+  if (!activeConfig) {
+    throw new Error('请先在设置中配置 API');
+  }
+
+  const targetUrl = formatApiUrl(activeConfig.baseUrl, '/chat/completions');
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${activeConfig ? activeConfig.apiKey : AUTH_TOKEN}`,
+    'Authorization': `Bearer ${activeConfig.apiKey}`,
   };
 
   console.log('Chat API Request:', {
     url: targetUrl,
     headers: {
       ...headers,
-      'Authorization': 'Bearer ' + (activeConfig ? activeConfig.apiKey : AUTH_TOKEN).substring(0, 10) + '...'
+      'Authorization': 'Bearer ' + activeConfig.apiKey.substring(0, 10) + '...'
     },
     body
   });
@@ -323,16 +325,18 @@ export async function sendChatMessageSync(
   }
 
   const activeConfig = await getActiveApiConfig('chat');
-  const targetUrl = activeConfig 
-    ? formatApiUrl(activeConfig.baseUrl, '/chat/completions')
-    : `${API_BASE_URL}/chat/completions`;
+  if (!activeConfig) {
+    throw new Error('请先在设置中配置 API');
+  }
+
+  const targetUrl = formatApiUrl(activeConfig.baseUrl, '/chat/completions');
 
   try {
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${activeConfig ? activeConfig.apiKey : AUTH_TOKEN}`,
+        'Authorization': `Bearer ${activeConfig.apiKey}`,
       },
       body: JSON.stringify(body),
     });

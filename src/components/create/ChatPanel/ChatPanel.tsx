@@ -18,7 +18,7 @@ import {
 import { toPng } from 'html-to-image';
 import { cn } from '../../../utils/cn';
 import { Button, Modal } from '../../common';
-import { sendChatMessage, createChatAbortController, AUTH_TOKEN } from '../../../services/chatApi';
+import { sendChatMessage, createChatAbortController } from '../../../services/chatApi';
 import { getActiveApiConfig, getCurrentChatSessionId, setCurrentChatSessionId } from '../../../utils/apiConfig';
 import { 
   saveChatSessionToDB, 
@@ -546,7 +546,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ className, history }) => {
     const loadApiInfo = async () => {
       const config = await getActiveApiConfig('chat');
       setActiveApi(config);
-      setHasToken(!!(config || AUTH_TOKEN));
+      setHasToken(!!config);
     };
     loadApiInfo();
   }, []);
@@ -1240,74 +1240,70 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ className, history }) => {
       </AnimatePresence>
 
       {/* Messages list */}
-      <div 
-        ref={scrollContainerRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-3 sm:p-4 pb-10 relative"
-      >
-        <div className="mx-auto max-w-4xl space-y-3 sm:space-y-4">
-          {messages.length === 0 && (
-            <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
-              <div className="w-16 h-16 rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary)] flex items-center justify-center">
-                {getAgentIcon(selectedAgent.icon, "w-8 h-8")}
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-[var(--color-text)]">与 {selectedAgent.name} 开始对话</h3>
-                <p className="text-sm text-[var(--color-text-secondary)] mt-1 max-w-[240px]">
-                  {selectedAgent.systemPrompt.slice(0, 60)}...
-                </p>
-              </div>
+        <div 
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 sm:space-y-4 pb-10"
+        >
+        {messages.length === 0 && (
+          <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
+            <div className="w-16 h-16 rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary)] flex items-center justify-center">
+              {getAgentIcon(selectedAgent.icon, "w-8 h-8")}
             </div>
-          )}
-          <AnimatePresence mode="popLayout" initial={false}>
-            {messages.map((message) => (
-              <motion.div
-                key={message.id}
-                layout
-                initial={{ opacity: 0, y: 10, scale: 1 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.98 }}
-                transition={{ duration: 0.2 }}
+            <div>
+              <h3 className="text-lg font-bold text-[var(--color-text)]">与 {selectedAgent.name} 开始对话</h3>
+              <p className="text-sm text-[var(--color-text-secondary)] mt-1 max-w-[240px]">
+                {selectedAgent.systemPrompt.slice(0, 60)}...
+              </p>
+            </div>
+          </div>
+        )}
+        <AnimatePresence>
+          {messages.map((message) => (
+            <motion.div
+              key={message.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className={cn(
+                'flex gap-2 sm:gap-3',
+                message.role === 'user' ? 'flex-row-reverse' : ''
+              )}
+            >
+              {/* Avatar */}
+              <div
                 className={cn(
-                  'flex gap-2 sm:gap-3',
-                  message.role === 'user' ? 'flex-row-reverse' : ''
+                  'w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center flex-shrink-0',
+                  message.role !== 'user'
+                    ? 'bg-[var(--gradient-primary)] text-white'
+                    : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)]'
                 )}
               >
-                {/* Avatar */}
-                <div
-                  className={cn(
-                    'w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center flex-shrink-0',
-                    message.role !== 'user'
-                      ? 'bg-[var(--gradient-primary)] text-white'
-                      : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)]'
-                  )}
-                >
-                  {message.role !== 'user' ? (
-                    <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  ) : (
-                    <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  )}
-                </div>
+                {message.role !== 'user' ? (
+                  <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                ) : (
+                  <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                )}
+              </div>
 
-                {/* Message content */}
-                <ChatMessageItem
-                  message={message}
-                  isStreaming={message.id === streamingMessage?.id}
-                  streamingContent={streamingMessage?.content}
-                  isCollapsed={collapsedMessages[message.id] ?? (message.id === streamingMessage?.id ? false : true)}
-                  onToggleCollapse={toggleCollapse}
-                  onCopy={handleCopy}
-                  onStartEdit={handleStartEdit}
-                  onExportPreview={openExportPreview}
-                  isCopied={copiedId === message.id}
-                  isAI={message.role !== 'user'}
-                />
-              </motion.div>
-            ))}
-          </AnimatePresence>
-          
-          <div ref={messagesEndRef} />
-        </div>
+              {/* Message content */}
+              <ChatMessageItem
+                message={message}
+                isStreaming={message.id === streamingMessage?.id}
+                streamingContent={streamingMessage?.content}
+                isCollapsed={collapsedMessages[message.id] ?? (message.id === streamingMessage?.id ? false : true)}
+                onToggleCollapse={toggleCollapse}
+                onCopy={handleCopy}
+                onStartEdit={handleStartEdit}
+                onExportPreview={openExportPreview}
+                isCopied={copiedId === message.id}
+                isAI={message.role !== 'user'}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
+        
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Input area */}
@@ -1362,10 +1358,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ className, history }) => {
                   <ChevronDown className={cn("w-3 h-3 transition-transform", isAgentSelectorOpen ? "rotate-180" : "")} />
                 </button>
 
-                <AnimatePresence mode="popLayout">
+                <AnimatePresence>
                   {isAgentSelectorOpen && (
                     <motion.div
-                      layout
                       initial={{ opacity: 0, y: 5, scale: 0.98 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 5, scale: 0.98 }}
