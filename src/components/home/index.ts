@@ -10,5 +10,6 @@ export { MasonryGrid };
 export { ImageCard };
 export { QuickAction };
 export { Welcome };
+export * from './HomeView';
 export { GalleryHeader, type SortOrder };
 export { ExportModal };

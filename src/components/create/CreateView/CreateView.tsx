@@ -47,6 +47,8 @@ export interface CreateViewProps {
   onDeleteImage?: (id: string) => void;
   /** CSS 类名 */
   className?: string;
+  /** 图片上传回调 */
+  onImageUploaded?: (url: string) => void;
 }
 
 /**
@@ -66,6 +68,7 @@ export const CreateView: React.FC<CreateViewProps> = ({
   onDeleteGroup,
   onDeleteImage,
   className,
+  onImageUploaded,
 }) => {
   const [isDesktop, setIsDesktop] = useState(false);
 
@@ -80,10 +83,10 @@ export const CreateView: React.FC<CreateViewProps> = ({
   }, []);
 
   return (
-    <div className={cn('flex flex-col h-full', className)}>
+    <div className={cn('flex flex-col h-full min-h-0', className)}>
       {/* 模式切换标签（移动端显示） */}
       {!isDesktop && (
-        <div className="flex gap-2 px-3 pb-0 pt-[calc(env(safe-area-inset-top,0px)+12px)]">
+        <div className="flex gap-2 px-3 pb-3 pt-[calc(env(safe-area-inset-top,0px)+12px)] bg-[var(--color-bg)]/80 backdrop-blur-md border-b border-[var(--color-border)] sticky top-0 z-30 flex-shrink-0">
           <button
             onClick={() => onModeChange('draw')}
             className={cn(
@@ -112,16 +115,17 @@ export const CreateView: React.FC<CreateViewProps> = ({
       )}
 
       {/* 内容区域 */}
-      <div className="flex-1 overflow-hidden">
-        <AnimatePresence mode="wait">
+      <div className="flex-1 overflow-hidden relative min-h-0">
+        <AnimatePresence mode="wait" initial={false}>
           {activeMode === 'draw' ? (
             <motion.div
               key="draw"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
-              transition={{ duration: 0.2 }}
-              className="h-full"
+              layout
+              initial={{ opacity: 0, x: -20, scale: 1 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 20, scale: 1 }}
+              transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+              className="h-full w-full relative"
             >
               <DrawPanel 
                 onImageGenerated={onImageGenerated}
@@ -139,11 +143,12 @@ export const CreateView: React.FC<CreateViewProps> = ({
           ) : (
             <motion.div
               key="chat"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.2 }}
-              className="h-full"
+              layout
+              initial={{ opacity: 0, x: 20, scale: 1 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: -20, scale: 1 }}
+              transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+              className="h-full w-full relative"
             >
               <ChatPanel history={history} />
             </motion.div>

@@ -58,6 +58,7 @@ export interface ImageGenerationOptions {
   size?: '2K' | '4K';
   scale?: number;
   maxImages?: number;
+  image?: string;
 }
 
 /** Image generation result */

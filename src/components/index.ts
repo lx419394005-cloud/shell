@@ -12,12 +12,14 @@ import { SettingsModal, type SettingsModalProps } from './common/SettingsModal/S
 // layout
 import { Navigation, type NavigationProps } from './layout/Navigation/Navigation';
 import { Container, type ContainerProps } from './layout/Container/Container';
+import { WorkbenchView } from './layout/WorkbenchView';
 
 // home
 import { MasonryGrid, type MasonryGridProps } from './home/MasonryGrid/MasonryGrid';
 import { ImageCard, type ImageCardProps } from './home/ImageCard/ImageCard';
 import { QuickAction, type QuickActionProps } from './home/QuickAction/QuickAction';
 import { Welcome, type WelcomeProps } from './home/Welcome/Welcome';
+import { HomeView } from './home/HomeView';
 import { GalleryHeader, type SortOrder } from './home/GalleryHeader/GalleryHeader';
 import { ExportModal } from './home/ExportModal';
 
@@ -38,12 +40,14 @@ export { SettingsModal, type SettingsModalProps };
 // layout exports
 export { Navigation, type NavigationProps };
 export { Container, type ContainerProps };
+export { WorkbenchView };
 
 // home exports
 export { MasonryGrid, type MasonryGridProps };
 export { ImageCard, type ImageCardProps };
 export { QuickAction, type QuickActionProps };
 export { Welcome, type WelcomeProps };
+export { HomeView };
 export { GalleryHeader, type SortOrder };
 export { ExportModal };
 

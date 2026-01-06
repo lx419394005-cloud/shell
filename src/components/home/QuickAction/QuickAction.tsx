@@ -46,7 +46,7 @@ export const QuickAction: React.FC<QuickActionProps> = ({
       <motion.div
         className={cn(
           'flex-1 min-w-0',
-          'bg-[var(--gradient-primary)]',
+          'bg-[image:var(--gradient-primary)]',
           'rounded-[var(--radius-xl)] sm:rounded-[var(--radius-2xl)]',
           'p-3 sm:p-6',
           'text-white',

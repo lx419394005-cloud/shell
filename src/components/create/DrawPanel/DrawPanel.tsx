@@ -7,10 +7,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Settings2, ImageIcon, AlertCircle, X, Loader2, Wand2, RotateCcw, Trash2, Download } from 'lucide-react';
+import { Sparkles, Settings2, ImageIcon, AlertCircle, X, Loader2, Wand2, RotateCcw, Trash2, Download, ShieldAlert } from 'lucide-react';
 import { cn } from '@/utils/cn';
-import { ASPECT_RATIOS, type AspectRatioKey, getUseCloudProxy, setUseCloudProxy } from '@/services/imageApi';
-import { optimizePrompt } from '@/services/chatApi';
+import { ASPECT_RATIOS, type AspectRatioKey, getUseCloudProxy } from '@/services/imageApi';
+import { setUseCloudProxy, getActiveApiConfig } from '@/utils/apiConfig';
+import { uploadToPicUI } from '@/services/picuiApi';
+import { optimizePrompt, AUTH_TOKEN } from '@/services/chatApi';
 import { RatioIcon } from '@/components/common/RatioIcon/RatioIcon';
 import { stripPromptCount, injectPromptCount } from '@/utils/prompt';
 
@@ -89,11 +91,26 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
   const [negativePrompt] = useState('blurry, low quality, distorted, deformed');
   const [aspectRatio, setAspectRatio] = useState<AspectRatioKey>('1:1');
   const [resolution, setResolution] = useState<'2K' | '4K'>('2K');
-  const [maxImages, setMaxImages] = useState<number>(4);
-  const [useCloudProxy, setUseCloudProxyState] = useState(getUseCloudProxy());
+  const [maxImages, setMaxImages] = useState<number>(1);
+  const [useCloudProxy, setUseCloudProxyState] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   
   // 批量操作状态
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  
+  // API 信息状态
+  const [activeApi, setActiveApi] = useState<any>(null);
+  const [hasToken, setHasToken] = useState(true);
+
+  useEffect(() => {
+    const loadApiInfo = async () => {
+      const config = await getActiveApiConfig('image');
+      setActiveApi(config);
+      setHasToken(!!(config || AUTH_TOKEN));
+    };
+    loadApiInfo();
+  }, []);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   
   // 使用 prop 或本地 fallback
@@ -131,15 +148,56 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
-  
-  // 引用设置面板的位置
-  const settingsButtonRef = useRef<HTMLButtonElement>(null);
 
-  // 滚动引用
+  // Refs
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const isInitialMount = useRef(true);
   const prevHistoryLength = useRef(groupedHistory.length);
+
+  // ... (keeping other effects)
+
+  // Handle upload
+  const handleUploadButtonClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // 简单验证文件类型
+    if (!file.type.startsWith('image/')) {
+      showToast?.('只能上传图片文件', 'error');
+      return;
+    }
+
+    // 验证文件大小 (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      showToast?.('图片大小不能超过 5MB', 'error');
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const result = await uploadToPicUI(file);
+      if (result.status) {
+        showToast?.('图片上传成功', 'success');
+        setUploadedImageUrl(result.data.links.url);
+      } else {
+        showToast?.(result.message || '上传失败', 'error');
+      }
+    } catch (err) {
+      showToast?.(err instanceof Error ? err.message : '上传过程中发生错误', 'error');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
 
   // 自动滚动到底部
   useEffect(() => {
@@ -162,12 +220,15 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
 
   // Persistence Effects
   useEffect(() => {
+    const initCloudProxy = async () => {
+      const use = await getUseCloudProxy();
+      setUseCloudProxyState(use);
+    };
+    initCloudProxy();
+
     // 监听来自其他页面的 storage 变更
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'gen_error' && e.newValue) {
-        setError(e.newValue);
-        localStorage.removeItem('gen_error');
-      }
+      // 如果有错误信息，可以考虑通过 IndexedDB 传递
     };
 
     window.addEventListener('storage', handleStorageChange);
@@ -175,10 +236,10 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
   }, []);
 
   // Toggle proxy mode
-  const toggleProxyMode = () => {
+  const toggleProxyMode = async () => {
     const newValue = !useCloudProxy;
     setUseCloudProxyState(newValue);
-    setUseCloudProxy(newValue);
+    await setUseCloudProxy(newValue);
   };
 
   // Handle prompt optimization
@@ -210,14 +271,22 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
     
     try {
       if (onStartGeneration) {
-        await onStartGeneration(finalPrompt, {
+        // 先清空输入框和上传的图片，提供即时反馈
+        setPrompt('');
+        setUploadedImageUrl(null);
+        
+        // 异步执行生成，不阻塞 UI 逻辑
+        onStartGeneration(finalPrompt, {
           aspectRatio,
           negativePrompt,
           size: resolution,
           maxImages,
+          image: uploadedImageUrl,
+        }).catch(err => {
+          if (err instanceof Error && err.name !== 'AbortError') {
+            setError(err.message);
+          }
         });
-        // 生成成功后清空当前输入框
-        setPrompt('');
       }
     } catch (err) {
       if (err instanceof Error && err.name !== 'AbortError') {
@@ -288,9 +357,9 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
   };
 
   return (
-    <div className={cn('relative h-full bg-[var(--color-bg)] overflow-hidden flex flex-col', className)}>
+    <div className={cn('relative h-full bg-[var(--color-bg)] flex flex-col min-h-0', className)}>
       {/* Header - 保持简洁 */}
-      <div className="px-4 sm:px-6 py-2 sm:py-3 flex items-center justify-between flex-shrink-0 z-20 bg-[var(--color-bg)]/80 backdrop-blur-md border-b border-[var(--color-border)]">
+      <div className="px-4 sm:px-6 py-2 sm:py-3 flex items-center justify-between flex-shrink-0 z-20 bg-[var(--color-bg)]/80 backdrop-blur-md border-b border-[var(--color-border)] sticky top-0">
         <div className="flex items-center gap-3 sm:gap-4">
           <h2 className="text-lg sm:text-xl font-bold text-[var(--color-text)] flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-[var(--color-primary)]" />
@@ -328,21 +397,29 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
           )}
           
           {/* Proxy Switcher */}
-          <button
-            onClick={toggleProxyMode}
-            className={cn(
-              "flex items-center gap-2 px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-all border",
-              useCloudProxy 
-                ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)] border-[var(--color-primary-soft)]"
-                : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)]"
+          <div className="flex items-center gap-2">
+            {activeApi && (
+              <div className="hidden sm:flex flex-col items-end mr-2 text-[10px] leading-tight text-[var(--color-text-secondary)]">
+                <span className="font-bold text-[var(--color-text)] opacity-80">{activeApi.name}</span>
+                <span className="opacity-60 max-w-[120px] truncate">{activeApi.apiKey.slice(0, 8)}***</span>
+              </div>
             )}
-          >
-            <div className={cn(
-              "w-1.5 h-1.5 rounded-full animate-pulse",
-              useCloudProxy ? "bg-[var(--color-primary)]" : "bg-gray-400"
-            )} />
-            {useCloudProxy ? "云模式" : "直连"}
-          </button>
+            <button
+              onClick={toggleProxyMode}
+              className={cn(
+                "flex items-center gap-2 px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-all border",
+                useCloudProxy 
+                  ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)] border-[var(--color-primary-soft)]"
+                  : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)]"
+              )}
+            >
+              <div className={cn(
+                "w-1.5 h-1.5 rounded-full animate-pulse",
+                useCloudProxy ? "bg-[var(--color-primary)]" : "bg-gray-400"
+              )} />
+              {useCloudProxy ? "云模式" : "直连"}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -557,6 +634,21 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
 
       {/* Input Area */}
       <div className="absolute bottom-0 left-0 right-0 z-30">
+        {/* Token Missing Warning */}
+        {!hasToken && (
+          <div className="mx-4 mb-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-2xl px-4 py-3 flex items-center justify-between gap-3 shadow-lg shadow-amber-500/5 backdrop-blur-md animate-in slide-in-from-bottom duration-500">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-amber-800 dark:text-amber-300">未检测到 API Token</p>
+                <p className="text-xs text-amber-700/70 dark:text-amber-400/60">请在侧边栏“API 设置”中配置您的 Key 才能开始创作</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 批量操作工具栏 */}
         <AnimatePresence>
           {isSelectionMode && (
@@ -612,12 +704,46 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
         )}>
         <div className="w-full max-w-3xl bg-[var(--color-bg-card)]/80 backdrop-blur-xl rounded-2xl sm:rounded-3xl shadow-2xl border border-[var(--color-border)] p-3">
           <div className="flex items-start gap-3 mb-2">
-            <button 
-              onClick={() => showToast?.('图片上传功能开发中', 'info')}
-              className="w-8 h-8 rounded-lg bg-[var(--color-primary-soft)] flex items-center justify-center flex-shrink-0 mt-0.5 hover:bg-[var(--color-border)] transition-colors"
-            >
-              <ImageIcon className="w-5 h-5 text-[var(--color-primary)]" />
-            </button>
+            <div className="relative flex-shrink-0 mt-0.5">
+              <button 
+                onClick={handleUploadButtonClick}
+                disabled={isUploading}
+                className={cn(
+                  "w-10 h-10 rounded-lg bg-[var(--color-primary-soft)] flex items-center justify-center transition-all overflow-hidden border border-transparent hover:border-[var(--color-primary)]/30",
+                  isUploading && "opacity-70 cursor-not-allowed",
+                  uploadedImageUrl && "ring-2 ring-[var(--color-primary)] ring-offset-2 ring-offset-[var(--color-bg-card)]"
+                )}
+                title={uploadedImageUrl ? "点击更换图片" : "上传参考图"}
+              >
+                {isUploading ? (
+                  <Loader2 className="w-5 h-5 text-[var(--color-primary)] animate-spin" />
+                ) : uploadedImageUrl ? (
+                  <img src={uploadedImageUrl} alt="参考图" className="w-full h-full object-cover" />
+                ) : (
+                  <ImageIcon className="w-5 h-5 text-[var(--color-primary)]" />
+                )}
+              </button>
+              
+              {uploadedImageUrl && !isUploading && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setUploadedImageUrl(null);
+                  }}
+                  className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors shadow-sm z-10"
+                  title="移除参考图"
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              )}
+            </div>
+            <input 
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept="image/*"
+              className="hidden"
+            />
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
@@ -641,10 +767,10 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
                   setShowSettings(!showSettings);
                 }}
                 className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[10px] sm:text-xs font-medium border transition-all whitespace-nowrap",
+                  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[10px] sm:text-xs font-medium border transition-all whitespace-nowrap active:scale-95",
                   showSettings 
                     ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)] border-[var(--color-primary-soft)] shadow-sm" 
-                    : "bg-[var(--color-bg)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:bg-[var(--color-surface)]"
+                    : "bg-[var(--color-bg)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:bg-[var(--color-surface)] hover:border-[var(--color-text-muted)]"
                 )}
               >
                 <Settings2 className="w-3.5 h-3.5" />
@@ -656,8 +782,9 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
                 onClick={handleOptimizePrompt}
                 disabled={!prompt.trim() || isOptimizing}
                 className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1.5 bg-[var(--color-bg)] text-[var(--color-text-secondary)] rounded-full text-[10px] sm:text-xs font-medium border border-[var(--color-border)] hover:bg-[var(--color-surface)] transition-all whitespace-nowrap",
-                  isOptimizing && "opacity-70 cursor-wait"
+                  "flex items-center gap-1.5 px-2.5 py-1.5 bg-[var(--color-bg)] text-[var(--color-text-secondary)] rounded-full text-[10px] sm:text-xs font-medium border border-[var(--color-border)] hover:bg-[var(--color-surface)] hover:border-[var(--color-text-muted)] transition-all whitespace-nowrap active:scale-95",
+                  isOptimizing && "opacity-70 cursor-wait",
+                  (!prompt.trim() || isOptimizing) && "opacity-50 cursor-not-allowed"
                 )}
               >
                 {isOptimizing ? (
@@ -788,13 +915,17 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
                 onClick={() => handleGenerate()}
                 disabled={!prompt.trim() || isGenerating}
                 className={cn(
-                  "w-8 h-8 rounded-full flex items-center justify-center transition-all",
+                  "w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 active:scale-90",
                   prompt.trim() && !isGenerating
-                    ? "bg-[var(--color-text)] text-white shadow-md scale-105"
-                    : "bg-[var(--color-border)] text-[var(--color-text-muted)]"
+                    ? "bg-[var(--color-text)] text-white shadow-md scale-105 hover:bg-[var(--color-text-secondary)] hover:shadow-lg"
+                    : "bg-[var(--color-border)] text-[var(--color-text-muted)] cursor-not-allowed opacity-50"
                 )}
               >
-                <Sparkles className="w-4 h-4" />
+                {isGenerating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
               </button>
             </div>
           </div>

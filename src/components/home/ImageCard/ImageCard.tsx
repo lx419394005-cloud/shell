@@ -95,10 +95,14 @@ export const ImageCard = React.memo<ImageCardProps>(({
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
 
   // 处理加载中或失败的状态
   const isLoading = status === 'loading';
   const isError = status === 'error';
+
+  // 宽高比对应的 CSS 类
+  const aspectRatioClass = ASPECT_RATIO_CLASS[aspectRatio] || 'aspect-[3/4]';
 
   // 处理复制
   const handleCopy = (e: React.MouseEvent) => {
@@ -126,9 +130,12 @@ export const ImageCard = React.memo<ImageCardProps>(({
         'relative rounded-[var(--radius-2xl)] overflow-hidden',
         // 阴影和过渡
         'shadow-[var(--shadow-md)] hover:shadow-[var(--shadow-hover)]',
-        'transition-shadow duration-300 cursor-pointer group',
+        'transition-shadow duration-300 cursor-pointer group will-change-transform',
+        // 强制使用宽高比防止布局跳动
+        aspectRatioClass,
         // 加载中和错误状态的背景
-        (isLoading || isError) && 'bg-[var(--color-surface)] aspect-[3/4] flex items-center justify-center border border-[var(--color-border)]',
+        (isLoading || isError) && 'bg-[var(--color-surface)] flex items-center justify-center border border-[var(--color-border)]',
+        !imageLoaded && !isLoading && !isError && 'bg-[var(--color-surface)] animate-pulse',
         className
       )}
       onMouseEnter={() => !isLoading && !isError && setIsHovered(true)}
@@ -142,15 +149,15 @@ export const ImageCard = React.memo<ImageCardProps>(({
         }
       }}
       whileHover={!isLoading && !isError && !isSelectionMode ? { y: -4 } : {}}
-      layout
+      layout="position"
     >
       {isLoading ? (
-        <div className="flex flex-col items-center gap-3 p-4 text-center">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center">
           <div className="w-8 h-8 border-4 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
           <span className="text-xs text-[var(--color-text-secondary)] font-medium">生成中...</span>
         </div>
       ) : isError ? (
-        <div className="flex flex-col items-center gap-3 p-4 text-center">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center">
           <div className="w-10 h-10 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center">
             <span className="text-lg">!</span>
           </div>
@@ -158,14 +165,16 @@ export const ImageCard = React.memo<ImageCardProps>(({
         </div>
       ) : (
         <>
-          {/* 图片 - 移除 h-full object-cover，使用 w-full 保持比例 */}
+          {/* 图片 */}
           <img
             src={imageUrl}
             alt={stripPromptCount(prompt)}
             loading="lazy"
+            onLoad={() => setImageLoaded(true)}
             className={cn(
-              "w-full h-auto block transition-transform duration-500",
-              isHovered && !isSelectionMode && "scale-105",
+              "w-full h-full object-cover transition-all duration-500",
+              !imageLoaded ? "opacity-0 scale-105" : "opacity-100 scale-100",
+              isHovered && !isSelectionMode && imageLoaded && "scale-105",
               isSelected && "scale-95 opacity-80"
             )}
           />

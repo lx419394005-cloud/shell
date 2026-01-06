@@ -327,6 +327,25 @@ body {
   animation: pulse-soft 2s ease-in-out infinite;
 }
 
+@keyframes pulse-slow {
+  0%, 100% { opacity: 0.05; transform: scale(1) rotate(12deg); }
+  50% { opacity: 0.1; transform: scale(1.1) rotate(15deg); }
+}
+
+@keyframes pulse-slow-reverse {
+  0%, 100% { opacity: 0.05; transform: scale(1) rotate(-12deg); }
+  50% { opacity: 0.1; transform: scale(1.1) rotate(-15deg); }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 15s ease-in-out infinite;
+}
+
+.animate-pulse-slow-delayed {
+  animation: pulse-slow-reverse 18s ease-in-out infinite;
+  animation-delay: -5s;
+}
+
 /* 交错动画延迟 */
 .stagger-1 {
   animation-delay: 0.05s;

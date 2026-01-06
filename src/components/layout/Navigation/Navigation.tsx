@@ -6,11 +6,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { LayoutGrid, Sparkles, Plus, ChevronLeft, ChevronRight, Palette, MessageSquare, Sun, Moon, Settings } from 'lucide-react';
+import { Home, LayoutGrid, Sparkles, Plus, ChevronLeft, ChevronRight, Palette, MessageSquare, Sun, Moon, Settings, AlertCircle } from 'lucide-react';
 import { cn } from '@/utils/cn';
+import { AUTH_TOKEN } from '@/services/chatApi';
+import { getActiveApiConfig } from '@/utils/apiConfig';
 
 /** View type */
-type ViewType = 'home' | 'create';
+type ViewType = 'home' | 'create' | 'landing';
 /** Create mode type */
 type CreateMode = 'draw' | 'chat';
 
@@ -40,8 +42,9 @@ interface NavItem {
 
 /** Navigation items definition */
 const NAV_ITEMS: NavItem[] = [
-  { view: 'home', icon: <LayoutGrid className="w-5 h-5" />, label: '图库' },
-  { view: 'create', icon: <Plus className="w-5 h-5" />, label: '创作' },
+  { view: 'landing', icon: <Home className="w-5 h-5 shrink-0" />, label: '首页' },
+  { view: 'home', icon: <LayoutGrid className="w-5 h-5 shrink-0" />, label: '图库' },
+  { view: 'create', icon: <Plus className="w-5 h-5 shrink-0" />, label: '创作' },
 ];
 
 /**
@@ -88,7 +91,7 @@ const NavButton: React.FC<NavButtonProps> = ({
     <button
       onClick={onClick}
       className={cn(
-        'flex items-center transition-all duration-300 ease-in-out relative',
+        'flex items-center transition-[color,background-color,transform,padding] duration-300 ease-in-out relative',
         'rounded-xl group active:scale-95',
         fullWidth ? 'w-full' : 'flex-none',
         fullWidth ? 'h-12' : 'h-10 px-4',
@@ -153,17 +156,45 @@ export const Navigation: React.FC<NavigationProps> = ({
   totalCount
 }) => {
   const isDesktop = useIsDesktop();
+  const [hasToken, setHasToken] = useState(true);
+
+  // 检查是否有可用 Token
+  useEffect(() => {
+    const checkToken = async () => {
+      // 1. 检查环境变量 Token
+      if (AUTH_TOKEN) {
+        setHasToken(true);
+        return;
+      }
+
+      // 2. 检查数据库中是否有激活的配置
+      const chatConfig = await getActiveApiConfig('chat');
+      const imageConfig = await getActiveApiConfig('image');
+      
+      setHasToken(!!(chatConfig || imageConfig));
+    };
+
+    checkToken();
+    
+    // 每隔几秒检查一次，或者在弹窗关闭后检查（这里简单处理，后续可以通过事件总线优化）
+    const timer = setInterval(checkToken, 5000);
+    return () => clearInterval(timer);
+  }, []);
 
   if (isDesktop) {
     return (
       <nav
         className={cn(
           'fixed left-0 top-0 h-screen bg-[var(--color-bg-card)] border-r border-[var(--color-border)] z-50',
-          'flex flex-col py-6 transition-all duration-300',
-          collapsed ? 'w-20 px-3' : 'w-64 px-4',
+          'flex flex-col py-6 transition-[width] duration-300 ease-in-out will-change-[width]',
+          collapsed ? 'w-20' : 'w-64',
           className
         )}
       >
+        <div className={cn(
+          "flex flex-col h-full transition-[padding] duration-300 ease-in-out",
+          collapsed ? "px-3" : "px-4"
+        )}>
         {/* Logo / Brand */}
         <div className={cn(
           "flex items-center mb-8 px-2 transition-all duration-300",
@@ -173,17 +204,24 @@ export const Navigation: React.FC<NavigationProps> = ({
             <motion.div 
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 group cursor-pointer"
+              onClick={() => onViewChange('home')}
             >
-              <div className="w-8 h-8 bg-[var(--gradient-primary)] rounded-lg flex items-center justify-center">
-                <Sparkles className="w-5 h-5 text-white" />
+              <div className="w-8 h-8 bg-[var(--color-primary)] rounded-xl flex items-center justify-center shadow-lg shadow-[var(--color-primary)]/20 transition-transform group-hover:scale-110">
+                <Sparkles className="w-5 h-5 text-white fill-current" />
               </div>
-              <span className="font-bold text-xl tracking-tight text-[var(--color-text)]">Pics AI</span>
+              <div className="flex flex-col leading-none">
+                <span className="font-black text-xl tracking-tighter text-[var(--color-text)]">PICS</span>
+                <span className="text-[10px] font-bold text-[var(--color-primary)] tracking-[0.2em] ml-0.5">STUDIO</span>
+              </div>
             </motion.div>
           )}
           {collapsed && (
-            <div className="w-8 h-8 bg-[var(--gradient-primary)] rounded-lg flex items-center justify-center">
-              <Sparkles className="w-5 h-5 text-white" />
+            <div 
+              className="w-10 h-10 bg-[var(--color-primary)] rounded-xl flex items-center justify-center shadow-lg shadow-[var(--color-primary)]/20 cursor-pointer transition-transform hover:scale-110"
+              onClick={() => onViewChange('home')}
+            >
+              <Sparkles className="w-6 h-6 text-white fill-current" />
             </div>
           )}
         </div>
@@ -200,7 +238,7 @@ export const Navigation: React.FC<NavigationProps> = ({
           <NavButton
             onClick={onOpenDraw || (() => {})}
             active={activeView === 'create' && createMode === 'draw'}
-            icon={<Palette className="w-5 h-5" />}
+            icon={<Palette className="w-5 h-5 shrink-0" />}
             label="AI 绘图"
             fullWidth
             collapsed={collapsed}
@@ -209,7 +247,7 @@ export const Navigation: React.FC<NavigationProps> = ({
           <NavButton
             onClick={onOpenChat || (() => {})}
             active={activeView === 'create' && createMode === 'chat'}
-            icon={<MessageSquare className="w-5 h-5" />}
+            icon={<MessageSquare className="w-5 h-5 shrink-0" />}
             label="智能对话"
             fullWidth
             collapsed={collapsed}
@@ -256,18 +294,34 @@ export const Navigation: React.FC<NavigationProps> = ({
                 title={isDarkMode ? "切换亮色模式" : "切换暗色模式"}
               >
                 <div className="flex items-center gap-3">
-                  <div className="p-1.5 rounded-lg bg-[var(--color-bg-card)] border border-[var(--color-border)] group-hover:border-[var(--color-primary)] transition-colors">
-                    {isDarkMode ? <Sun className="w-4 h-4 text-orange-400" /> : <Moon className="w-4 h-4 text-indigo-400" />}
+                  <div className={cn(
+                    "p-1.5 rounded-lg border transition-colors shadow-sm",
+                    isDarkMode 
+                      ? "bg-orange-500/10 border-orange-500/20 text-orange-400" 
+                      : "bg-indigo-500/10 border-indigo-500/20 text-indigo-500"
+                  )}>
+                    {isDarkMode ? (
+                      <Sun className="w-4 h-4 fill-current stroke-[2.5px]" />
+                    ) : (
+                      <Moon className="w-4 h-4 fill-current stroke-[2.5px]" />
+                    )}
                   </div>
-                  {!collapsed && <span className="text-xs font-semibold text-[var(--color-text)]">{isDarkMode ? '亮色模式' : '暗色模式'}</span>}
+                  {!collapsed && (
+                    <span className={cn(
+                      "text-xs font-semibold transition-colors",
+                      isDarkMode ? "text-orange-500" : "text-indigo-600"
+                    )}>
+                      {isDarkMode ? '切换亮色' : '切换暗色'}
+                    </span>
+                  )}
                 </div>
                 {!collapsed && (
                   <div className={cn(
-                    "w-8 h-4 rounded-full p-0.5 transition-colors",
-                    isDarkMode ? "bg-[var(--color-primary)]" : "bg-[var(--color-border)]"
+                    "w-8 h-4 rounded-full p-0.5 transition-colors shadow-inner border border-transparent shrink-0",
+                    isDarkMode ? "bg-[var(--color-primary)]" : "bg-zinc-200 dark:bg-zinc-700"
                   )}>
                     <div className={cn(
-                      "w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-300",
+                      "w-3 h-3 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.2)] transition-transform duration-300",
                       isDarkMode ? "translate-x-4" : "translate-x-0"
                     )} />
                   </div>
@@ -278,14 +332,30 @@ export const Navigation: React.FC<NavigationProps> = ({
                 onClick={onOpenSettings}
                 className={cn(
                   "flex items-center gap-3 w-full transition-all group p-1.5 rounded-xl hover:bg-[var(--color-surface)]",
-                  collapsed ? "justify-center" : "justify-start"
+                  collapsed ? "justify-center" : "justify-start",
+                  !hasToken && "bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20"
                 )}
-                title="API 设置"
+                title={!hasToken ? "未配置 API Token，点击设置" : "API 设置"}
               >
-                <div className="p-1.5 rounded-lg bg-[var(--color-bg-card)] border border-[var(--color-border)] group-hover:border-[var(--color-primary)] transition-colors">
-                  <Settings className="w-4 h-4 text-[var(--color-text)]" />
+                <div className={cn(
+                  "p-1.5 rounded-lg border transition-colors shadow-sm",
+                  !hasToken 
+                    ? "bg-amber-100 border-amber-300 text-amber-600 animate-pulse" 
+                    : "bg-[var(--color-surface)] border border-[var(--color-border)] group-hover:border-[var(--color-primary)] text-[var(--color-text)]"
+                )}>
+                  {!hasToken ? <AlertCircle className="w-4 h-4" /> : <Settings className="w-4 h-4" />}
                 </div>
-                {!collapsed && <span className="text-xs font-semibold text-[var(--color-text)]">API 设置</span>}
+                {!collapsed && (
+                  <div className="flex flex-col items-start overflow-hidden">
+                    <span className={cn(
+                      "text-xs font-semibold",
+                      !hasToken ? "text-amber-700 dark:text-amber-400" : "text-[var(--color-text)]"
+                    )}>
+                      {!hasToken ? '缺少 Token' : 'API 设置'}
+                    </span>
+                    {!hasToken && <span className="text-[10px] text-amber-600/70 dark:text-amber-400/50 truncate">点击立即配置</span>}
+                  </div>
+                )}
               </button>
 
               {memoryUsage && (
@@ -303,7 +373,7 @@ export const Navigation: React.FC<NavigationProps> = ({
                         </div>
                         <div className="h-1 w-full bg-[var(--color-bg-card)] rounded-full overflow-hidden">
                           <div 
-                            className="h-full bg-[var(--gradient-primary)] transition-all duration-500" 
+                            className="h-full bg-[image:var(--gradient-primary)] transition-all duration-500" 
                             style={{ width: `${Math.min(parseFloat(memoryUsage) / 50, 100)}%` }}
                           />
                         </div>
@@ -322,12 +392,13 @@ export const Navigation: React.FC<NavigationProps> = ({
           <NavButton
             onClick={onToggleCollapse || (() => {})}
             active={false}
-            icon={collapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
+            icon={collapsed ? <ChevronRight className="w-5 h-5 shrink-0" /> : <ChevronLeft className="w-5 h-5 shrink-0" />}
             label="收起侧边栏"
             fullWidth
             collapsed={collapsed}
             title={collapsed ? "展开" : "收起"}
           />
+        </div>
         </div>
       </nav>
     );

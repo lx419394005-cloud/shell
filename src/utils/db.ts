@@ -8,7 +8,8 @@ const IMAGE_STORE = 'images';
 const CHAT_STORE = 'chats';
 const AGENT_STORE = 'agents';
 const CONFIG_STORE = 'configs';
-const DB_VERSION = 3;
+const SETTINGS_STORE = 'settings';
+const DB_VERSION = 8;
 
 /**
  * 初始化数据库
@@ -19,6 +20,7 @@ const initDB = (): Promise<IDBDatabase> => {
 
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
+      const oldVersion = event.oldVersion;
       
       // 图片存储
       if (!db.objectStoreNames.contains(IMAGE_STORE)) {
@@ -38,6 +40,15 @@ const initDB = (): Promise<IDBDatabase> => {
       // API 配置存储
       if (!db.objectStoreNames.contains(CONFIG_STORE)) {
         db.createObjectStore(CONFIG_STORE, { keyPath: 'id' });
+      }
+
+      // 系统设置存储 - 如果旧版本小于 8，强制删除并重建以修复 keyPath 错误
+      if (oldVersion > 0 && oldVersion < 8 && db.objectStoreNames.contains(SETTINGS_STORE)) {
+        db.deleteObjectStore(SETTINGS_STORE);
+      }
+
+      if (!db.objectStoreNames.contains(SETTINGS_STORE)) {
+        db.createObjectStore(SETTINGS_STORE, { keyPath: 'key' });
       }
     };
 
@@ -137,6 +148,23 @@ export const deleteApiConfigFromDB = async (id: string) => {
 };
 
 /**
+ * 系统设置操作
+ */
+export const saveSettingToDB = async (key: string, value: any) => {
+  return performAction(SETTINGS_STORE, 'readwrite', (store) => store.put({ key, value }));
+};
+
+export const getSettingFromDB = async <T>(key: string): Promise<T | null> => {
+  try {
+    const result = await performAction<{ key: string, value: T }>(SETTINGS_STORE, 'readonly', (store) => store.get(key));
+    return result ? result.value : null;
+  } catch (error) {
+    console.error(`Failed to get setting ${key}:`, error);
+    return null;
+  }
+};
+
+/**
  * 清空数据库 (按 Store)
  */
 export const clearStore = async (storeName: string) => {
@@ -150,4 +178,62 @@ export const clearAllDB = async () => {
   await clearStore(IMAGE_STORE);
   await clearStore(CHAT_STORE);
   await clearStore(AGENT_STORE);
+};
+
+/**
+ * 自动迁移 LocalStorage 数据到 IndexedDB
+ * 这个函数应该在应用初始化时调用一次
+ */
+export const migrateLocalStorageData = async () => {
+  try {
+    // 1. 迁移图片历史
+    const localHistoryStr = localStorage.getItem('image_history');
+    if (localHistoryStr) {
+      const dbImages = await getAllImagesFromDB();
+      if (dbImages.length === 0) {
+        const localHistory = JSON.parse(localHistoryStr);
+        for (const item of localHistory) {
+          await saveImageToDB(item);
+        }
+        console.log('Successfully migrated image_history from LocalStorage');
+      }
+      localStorage.removeItem('image_history');
+    }
+
+    // 2. 迁移聊天会话
+    const chatSessionsStr = localStorage.getItem('chat_sessions');
+    if (chatSessionsStr) {
+      const dbSessions = await getAllChatSessionsFromDB();
+      if (dbSessions.length === 0) {
+        const parsed = JSON.parse(chatSessionsStr).map((s: any) => ({
+          ...s,
+          messages: s.messages.map((m: any) => ({
+            ...m,
+            timestamp: typeof m.timestamp === 'string' ? new Date(m.timestamp).getTime() : m.timestamp
+          }))
+        }));
+        for (const s of parsed) {
+          await saveChatSessionToDB(s);
+        }
+        console.log('Successfully migrated chat_sessions from LocalStorage');
+      }
+      localStorage.removeItem('chat_sessions');
+    }
+
+    // 3. 迁移自定义 Agent
+    const customAgentsStr = localStorage.getItem('custom_agents');
+    if (customAgentsStr) {
+      const dbAgents = await getAllAgentsFromDB();
+      if (dbAgents.length === 0) {
+        const parsed = JSON.parse(customAgentsStr);
+        for (const a of parsed) {
+          await saveAgentToDB(a);
+        }
+        console.log('Successfully migrated custom_agents from LocalStorage');
+      }
+      localStorage.removeItem('custom_agents');
+    }
+  } catch (error) {
+    console.error('Data migration failed:', error);
+  }
 };

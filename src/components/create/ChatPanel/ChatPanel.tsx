@@ -13,19 +13,21 @@ import {
   ChevronDown, ChevronRight, Edit2, Save, Paperclip, ArrowUp, 
   Lightbulb, Code, Plus, FileText, Settings, 
   History, Share2, Download, Image as ImageIcon, Type, Layout, Palette as PaletteIcon,
-  Maximize, Square, Smartphone, MousePointer2
+  Maximize, Square, Smartphone, MousePointer2, ShieldAlert
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { cn } from '../../../utils/cn';
 import { Button, Modal } from '../../common';
-import { sendChatMessage, createChatAbortController } from '../../../services/chatApi';
+import { sendChatMessage, createChatAbortController, AUTH_TOKEN } from '../../../services/chatApi';
+import { getActiveApiConfig, getCurrentChatSessionId, setCurrentChatSessionId } from '../../../utils/apiConfig';
 import { 
   saveChatSessionToDB, 
   getAllChatSessionsFromDB, 
   deleteChatSessionFromDB,
   saveAgentToDB,
   getAllAgentsFromDB,
-  deleteAgentFromDB
+  deleteAgentFromDB,
+  migrateLocalStorageData
 } from '../../../utils/db';
 import type { ChatMessage } from '../../../types/api';
 import type { Message, Agent, ChatSession } from '../../../types';
@@ -453,25 +455,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ className, history }) => {
   useEffect(() => {
     const loadFromDB = async () => {
       try {
+        await migrateLocalStorageData(); // 统一在初始化时执行迁移
         const dbSessions = await getAllChatSessionsFromDB();
         
-        // Data Migration: LocalStorage to IndexedDB
-        const saved = localStorage.getItem('chat_sessions');
-        if (saved && dbSessions.length === 0) {
-          const parsed = JSON.parse(saved).map((s: any) => ({
-            ...s,
-            messages: s.messages.map((m: any) => ({
-              ...m,
-              timestamp: typeof m.timestamp === 'string' ? new Date(m.timestamp).getTime() : m.timestamp
-            }))
-          }));
-          
-          for (const s of parsed) {
-            await saveChatSessionToDB(s);
-          }
-          localStorage.removeItem('chat_sessions');
-          setSessions(parsed);
-        } else if (dbSessions.length > 0) {
+        if (dbSessions.length > 0) {
           setSessions(dbSessions);
         } else {
           // Initial default session
@@ -502,20 +489,20 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ className, history }) => {
     loadFromDB();
   }, []);
 
-  const [currentSessionId, setCurrentSessionId] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('current_chat_session_id');
-      if (saved) return saved;
-    }
-    return ''; // Will be set after DB load
-  });
+  const [currentSessionId, setCurrentSessionId] = useState<string>('');
 
   // Update currentSessionId if empty after DB load
   useEffect(() => {
-    if (isDBLoaded && !currentSessionId && sessions.length > 0) {
-      setCurrentSessionId(sessions[0].id);
-    }
-  }, [isDBLoaded, currentSessionId, sessions]);
+    const initSessionId = async () => {
+      const savedId = await getCurrentChatSessionId();
+      if (savedId) {
+        setCurrentSessionId(savedId);
+      } else if (isDBLoaded && sessions.length > 0) {
+        setCurrentSessionId(sessions[0].id);
+      }
+    };
+    initSessionId();
+  }, [isDBLoaded, sessions]);
 
   // --- Custom Agents State ---
   const [customAgents, setCustomAgents] = useState<Agent[]>([]);
@@ -523,19 +510,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ className, history }) => {
   useEffect(() => {
     const loadAgents = async () => {
       try {
+        await migrateLocalStorageData(); // 确保迁移已执行
         const dbAgents = await getAllAgentsFromDB();
-        const saved = localStorage.getItem('custom_agents');
-        
-        if (saved && dbAgents.length === 0) {
-          const parsed = JSON.parse(saved);
-          for (const a of parsed) {
-            await saveAgentToDB(a);
-          }
-          localStorage.removeItem('custom_agents');
-          setCustomAgents(parsed);
-        } else {
-          setCustomAgents(dbAgents);
-        }
+        setCustomAgents(dbAgents);
       } catch (err) {
         console.error('Failed to load agents from IndexedDB:', err);
       }
@@ -562,6 +539,17 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ className, history }) => {
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [streamingMessage, setStreamingMessage] = useState<{ id: string, content: string } | null>(null);
+  const [activeApi, setActiveApi] = useState<any>(null);
+  const [hasToken, setHasToken] = useState(true);
+
+  useEffect(() => {
+    const loadApiInfo = async () => {
+      const config = await getActiveApiConfig('chat');
+      setActiveApi(config);
+      setHasToken(!!(config || AUTH_TOKEN));
+    };
+    loadApiInfo();
+  }, []);
 
   // --- Refs ---
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -608,7 +596,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ className, history }) => {
 
   // --- Persistence ---
   useEffect(() => {
-    localStorage.setItem('current_chat_session_id', currentSessionId);
+    if (currentSessionId) {
+      setCurrentChatSessionId(currentSessionId);
+    }
   }, [currentSessionId]);
 
   // --- Session Actions ---
@@ -1090,12 +1080,78 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ className, history }) => {
     setExportFontSize(initialSize);
   }, []);
 
+  // --- Render Loading State ---
+  if (!isDBLoaded) {
+    return (
+      <div className={cn('relative h-full bg-[var(--color-bg)] flex flex-col min-h-0', className)}>
+        <div className="flex-1 flex flex-col min-w-0 relative overflow-hidden">
+          {/* Skeleton Header */}
+          <div className="px-4 sm:px-6 py-2 sm:py-3 border-b border-[var(--color-border)] flex-shrink-0 bg-[var(--color-bg)]/80 backdrop-blur-md sticky top-0 z-20">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-[var(--color-border)] animate-pulse shrink-0" />
+                <div className="space-y-2">
+                  <div className="h-4 w-24 bg-[var(--color-border)] rounded animate-pulse" />
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-border)] animate-pulse" />
+                    <div className="h-3 w-16 bg-[var(--color-border)] rounded animate-pulse" />
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-9 h-9 bg-[var(--color-border)] rounded-xl animate-pulse" />
+              </div>
+            </div>
+          </div>
+
+          {/* Skeleton Messages */}
+          <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className={cn("flex gap-3", i % 2 === 0 ? "flex-row-reverse" : "")}>
+                <div className="w-8 h-8 rounded-full bg-[var(--color-border)] animate-pulse shrink-0" />
+                <div className="flex flex-col gap-1 max-w-[70%]">
+                  <div className={cn(
+                    "h-12 w-full rounded-2xl animate-pulse",
+                    i % 2 === 0 ? "bg-[var(--color-primary-soft)]/30" : "bg-[var(--color-surface)]"
+                  )} />
+                  {i === 1 && <div className="h-8 w-3/4 rounded-2xl bg-[var(--color-surface)] animate-pulse" />}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Skeleton Input Area */}
+          <div className="p-3 sm:p-4 border-t border-[var(--color-border)] bg-[var(--color-bg-card)] pb-[calc(env(safe-area-inset-bottom,0px)+80px)] sm:pb-6">
+            <div className="relative flex flex-col bg-[var(--color-surface)] rounded-3xl border border-[var(--color-border)] h-[100px] animate-pulse">
+              <div className="flex-1 p-3">
+                <div className="h-4 w-1/2 bg-[var(--color-border)] rounded" />
+              </div>
+              <div className="flex items-center justify-between px-3 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-20 h-7 bg-[var(--color-border)] rounded-full" />
+                  <div className="w-24 h-7 bg-[var(--color-border)] rounded-full" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-[var(--color-border)] rounded-full" />
+                  <div className="w-8 h-8 bg-[var(--color-border)] rounded-full" />
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-center mt-2.5">
+              <div className="h-3 w-32 bg-[var(--color-border)]/50 rounded animate-pulse" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={cn('flex h-full overflow-hidden bg-[var(--color-bg-panel)]', className)}>
+    <div className={cn('relative h-full bg-[var(--color-bg)] flex flex-col min-h-0', className)}>
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0 relative">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 relative overflow-hidden">
         {/* Header */}
-        <div className="px-3 py-3 sm:px-4 sm:py-3 border-b border-[var(--color-border)] flex-shrink-0 bg-[var(--color-surface)]/80 backdrop-blur-md sticky top-0 z-10">
+        <div className="px-4 sm:px-6 py-2 sm:py-3 border-b border-[var(--color-border)] flex-shrink-0 bg-[var(--color-bg)]/80 backdrop-blur-md sticky top-0 z-20">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3 min-w-0">
               <div 
@@ -1118,6 +1174,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ className, history }) => {
               </div>
             </div>
             <div className="flex items-center gap-1">
+              {activeApi && (
+                <div className="hidden sm:flex flex-col items-end mr-3 text-[10px] leading-tight text-[var(--color-text-secondary)]">
+                  <span className="font-bold text-[var(--color-text)] opacity-80">{activeApi.name}</span>
+                  <span className="opacity-60 max-w-[120px] truncate">{activeApi.apiKey.slice(0, 8)}***</span>
+                </div>
+              )}
               <button
                 onClick={() => setIsSessionsModalOpen(true)}
                 className="p-2 text-[var(--color-text-muted)] hover:text-[var(--color-primary)] hover:bg-[var(--color-primary-soft)]/10 rounded-xl transition-all"
@@ -1128,6 +1190,21 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ className, history }) => {
             </div>
           </div>
         </div>
+
+        {/* Token Missing Warning */}
+        {!hasToken && (
+          <div className="bg-amber-50 dark:bg-amber-500/10 border-b border-amber-200 dark:border-amber-500/20 px-4 py-2.5 flex items-center justify-between gap-3 animate-in slide-in-from-top duration-300">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="p-1.5 rounded-lg bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                <ShieldAlert className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-amber-800 dark:text-amber-300">未检测到 API Token</p>
+                <p className="text-[10px] text-amber-700/70 dark:text-amber-400/60 truncate">请在左侧侧边栏“API 设置”中配置您的 Key 才能开始对话</p>
+              </div>
+            </div>
+          </div>
+        )}
 
       {/* Error message - 对话流样式 */}
       <AnimatePresence>
@@ -1166,72 +1243,76 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ className, history }) => {
       <div 
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 sm:space-y-4"
+        className="flex-1 overflow-y-auto p-3 sm:p-4 pb-10 relative"
       >
-        {messages.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
-            <div className="w-16 h-16 rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary)] flex items-center justify-center">
-              {getAgentIcon(selectedAgent.icon, "w-8 h-8")}
+        <div className="mx-auto max-w-4xl space-y-3 sm:space-y-4">
+          {messages.length === 0 && (
+            <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
+              <div className="w-16 h-16 rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary)] flex items-center justify-center">
+                {getAgentIcon(selectedAgent.icon, "w-8 h-8")}
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-[var(--color-text)]">与 {selectedAgent.name} 开始对话</h3>
+                <p className="text-sm text-[var(--color-text-secondary)] mt-1 max-w-[240px]">
+                  {selectedAgent.systemPrompt.slice(0, 60)}...
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-lg font-bold text-[var(--color-text)]">与 {selectedAgent.name} 开始对话</h3>
-              <p className="text-sm text-[var(--color-text-secondary)] mt-1 max-w-[240px]">
-                {selectedAgent.systemPrompt.slice(0, 60)}...
-              </p>
-            </div>
-          </div>
-        )}
-        <AnimatePresence>
-          {messages.map((message) => (
-            <motion.div
-              key={message.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className={cn(
-                'flex gap-2 sm:gap-3',
-                message.role === 'user' ? 'flex-row-reverse' : ''
-              )}
-            >
-              {/* Avatar */}
-              <div
+          )}
+          <AnimatePresence mode="popLayout" initial={false}>
+            {messages.map((message) => (
+              <motion.div
+                key={message.id}
+                layout
+                initial={{ opacity: 0, y: 10, scale: 1 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.98 }}
+                transition={{ duration: 0.2 }}
                 className={cn(
-                  'w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center flex-shrink-0',
-                  message.role !== 'user'
-                    ? 'bg-[var(--gradient-primary)] text-white'
-                    : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)]'
+                  'flex gap-2 sm:gap-3',
+                  message.role === 'user' ? 'flex-row-reverse' : ''
                 )}
               >
-                {message.role !== 'user' ? (
-                  <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                ) : (
-                  <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                )}
-              </div>
+                {/* Avatar */}
+                <div
+                  className={cn(
+                    'w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center flex-shrink-0',
+                    message.role !== 'user'
+                      ? 'bg-[var(--gradient-primary)] text-white'
+                      : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)]'
+                  )}
+                >
+                  {message.role !== 'user' ? (
+                    <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  ) : (
+                    <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  )}
+                </div>
 
-              {/* Message content */}
-              <ChatMessageItem
-                message={message}
-                isStreaming={message.id === streamingMessage?.id}
-                streamingContent={streamingMessage?.content}
-                isCollapsed={collapsedMessages[message.id] ?? (message.id === streamingMessage?.id ? false : true)}
-                onToggleCollapse={toggleCollapse}
-                onCopy={handleCopy}
-                onStartEdit={handleStartEdit}
-                onExportPreview={openExportPreview}
-                isCopied={copiedId === message.id}
-                isAI={message.role !== 'user'}
-              />
-            </motion.div>
-          ))}
-        </AnimatePresence>
-        
-        <div ref={messagesEndRef} />
+                {/* Message content */}
+                <ChatMessageItem
+                  message={message}
+                  isStreaming={message.id === streamingMessage?.id}
+                  streamingContent={streamingMessage?.content}
+                  isCollapsed={collapsedMessages[message.id] ?? (message.id === streamingMessage?.id ? false : true)}
+                  onToggleCollapse={toggleCollapse}
+                  onCopy={handleCopy}
+                  onStartEdit={handleStartEdit}
+                  onExportPreview={openExportPreview}
+                  isCopied={copiedId === message.id}
+                  isAI={message.role !== 'user'}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
+          
+          <div ref={messagesEndRef} />
+        </div>
       </div>
 
       {/* Input area */}
       <div className={cn(
-         "p-3 sm:p-4 border-t border-[var(--color-border)] bg-[var(--color-bg-card)] flex-shrink-0",
+         "p-3 sm:p-4 border-t border-[var(--color-border)] bg-[var(--color-bg)] flex-shrink-0",
          "pb-[calc(env(safe-area-inset-bottom,0px)+80px)] sm:pb-6"
        )}>
         <form 
@@ -1239,7 +1320,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ className, history }) => {
             e.preventDefault();
             handleSend();
           }}
-          className="relative flex flex-col bg-[var(--color-surface)] rounded-3xl border border-[var(--color-border)] focus-within:ring-1 focus-within:ring-[var(--color-primary)] focus-within:border-[var(--color-primary)] transition-all shadow-sm"
+          className="mx-auto max-w-4xl relative flex flex-col bg-[var(--color-surface)] rounded-3xl border border-[var(--color-border)] focus-within:ring-1 focus-within:ring-[var(--color-primary)] focus-within:border-[var(--color-primary)] transition-all shadow-sm"
         >
           <textarea
             value={inputValue}
@@ -1281,9 +1362,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ className, history }) => {
                   <ChevronDown className={cn("w-3 h-3 transition-transform", isAgentSelectorOpen ? "rotate-180" : "")} />
                 </button>
 
-                <AnimatePresence>
+                <AnimatePresence mode="popLayout">
                   {isAgentSelectorOpen && (
                     <motion.div
+                      layout
                       initial={{ opacity: 0, y: 5, scale: 0.98 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 5, scale: 0.98 }}

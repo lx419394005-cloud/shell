@@ -51,7 +51,7 @@ const getVariantStyles = (variant: ButtonVariant, gradient: boolean): string => 
   const variants: Record<ButtonVariant, string> = {
     /** 主要按钮 - 渐变橙色背景 */
     primary: gradient
-      ? 'bg-[var(--gradient-primary)] text-white shadow-[var(--shadow-primary)] hover:opacity-90 active:scale-95 disabled:grayscale disabled:opacity-30 disabled:cursor-not-allowed'
+      ? 'bg-[image:var(--gradient-primary)] text-white shadow-[var(--shadow-primary)] hover:opacity-90 active:scale-95 disabled:grayscale disabled:opacity-30 disabled:cursor-not-allowed'
       : 'bg-[var(--color-primary)] text-white shadow-[var(--shadow-primary)] hover:opacity-90 active:scale-95 disabled:grayscale disabled:opacity-30 disabled:cursor-not-allowed',
 
     /** 次要按钮 - 柔和背景 */

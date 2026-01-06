@@ -5,7 +5,7 @@
  * @example const columns = useMasonry(containerRef, { minColumns: 2, maxColumns: 6 });
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useLayoutEffect, useCallback, useRef } from 'react';
 
 /** Hook 配置接口 */
 interface UseMasonryOptions {
@@ -39,27 +39,30 @@ export const useMasonry = (
     if (!containerRef.current) return;
 
     const containerWidth = containerRef.current.offsetWidth;
+    if (containerWidth === 0) return; // Skip if not yet measured
+
     const calculated = Math.max(
       minColumns,
       Math.min(maxColumns, Math.floor((containerWidth + gap) / (minItemWidth + gap)))
     );
 
-    setColumnCount(calculated);
+    setColumnCount(prev => prev !== calculated ? calculated : prev);
   }, [containerRef, minColumns, maxColumns, gap, minItemWidth]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     calculateColumns();
     
-    let timer: number;
-    const handleResize = () => {
-      clearTimeout(timer);
-      timer = window.setTimeout(calculateColumns, 100);
-    };
+    // Use ResizeObserver for more reliable and efficient resizing
+    if (!containerRef.current) return;
 
-    window.addEventListener('resize', handleResize);
+    const resizeObserver = new ResizeObserver(() => {
+      calculateColumns();
+    });
+
+    resizeObserver.observe(containerRef.current);
+
     return () => {
-      window.removeEventListener('resize', handleResize);
-      clearTimeout(timer);
+      resizeObserver.disconnect();
     };
   }, [calculateColumns]);
 

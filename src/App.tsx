@@ -11,19 +11,17 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { motion as motionHtml } from 'framer-motion';
-import {
-  Image as ImageIcon,
-} from 'lucide-react';
 import { cn } from './utils/cn';
 
 // 导入新组件
 import {
-  Navigation,
   Container,
   MasonryGrid,
   ImageCard,
   Welcome,
+  HomeView,
   CreateView,
+  WorkbenchView,
   Modal,
   Toast,
   type ToastType,
@@ -37,10 +35,25 @@ import { ExportModal } from './components/home/ExportModal/ExportModal';
 
 import { type HistoryItem, type Message } from './types';
 
-import { generateImage, DEFAULT_MODEL } from './services/imageApi';
+import { 
+  generateImageStream,
+  DEFAULT_MODEL 
+} from './services/imageApi';
 import { Copy, Trash2, Download, X, Info, ChevronRight, ChevronLeft } from 'lucide-react';
-import { getAllImagesFromDB, deleteImageFromDB, saveImageToDB, clearAllImagesFromDB } from './utils/db';
+import { getAllImagesFromDB, deleteImageFromDB, saveImageToDB, clearAllImagesFromDB, migrateLocalStorageData } from './utils/db';
 import { stripPromptCount } from './utils/prompt';
+import { 
+  getThemeSetting, 
+  setThemeSetting, 
+  getSidebarCollapsedSetting, 
+  setSidebarCollapsedSetting,
+  getSelectedChatModelSetting,
+  setSelectedChatModelSetting,
+  getActiveViewSetting,
+  setActiveViewSetting,
+  getCreateModeSetting,
+  setCreateModeSetting
+} from './utils/apiConfig';
 
 // 预设聊天模型
 const CHAT_MODELS = [
@@ -54,7 +67,7 @@ const CHAT_MODELS = [
  */
 function App() {
   // ===== 视图状态 =====
-  const [activeView, setActiveView] = useState<'home' | 'create'>('home');
+  const [activeView, setActiveView] = useState<'home' | 'create' | 'landing'>('landing');
   const [createMode, setCreateMode] = useState<'draw' | 'chat'>('draw');
   const [previewImage, setPreviewImage] = useState<HistoryItem | null>(null);
   const [previewList, setPreviewList] = useState<HistoryItem[]>([]);
@@ -67,6 +80,9 @@ function App() {
 
   // Toast 状态
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+
+  // ===== 初始化状态 =====
+  const [isInitializing, setIsInitializing] = useState(true);
 
   // ===== 图库批量操作状态 =====
   const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -98,24 +114,10 @@ function App() {
     setPreviewImage(previewList[nextIndex]);
   }, [previewImage, previewList]);
 
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('sidebar_collapsed');
-      return saved === 'true';
-    }
-    return false;
-  });
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // ===== 主题状态 =====
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('theme');
-      if (saved) return saved === 'dark';
-      return document.documentElement.classList.contains('dark') ||
-        window.matchMedia('(prefers-color-scheme: dark)').matches;
-    }
-    return false;
-  });
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
   // ===== 绘图状态 =====
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -158,7 +160,6 @@ function App() {
       showToast(`已删除 ${selectedIds.size} 张图片`, 'success');
       setSelectedIds(new Set());
       setIsSelectionMode(false);
-      window.dispatchEvent(new Event('storage'));
     } catch (error) {
       console.error('批量删除失败:', error);
       showToast('删除失败', 'error');
@@ -192,50 +193,17 @@ function App() {
       await clearAllImagesFromDB();
       setHistory([]);
       showToast('已清空所有历史记录', 'success');
-      window.dispatchEvent(new Event('storage'));
     } catch (error) {
       console.error('清空失败:', error);
       showToast('清空失败', 'error');
     }
   }, [history.length]);
 
-  // 计算内存占用 (仅针对 Base64 图片)
-  const memoryUsage = useMemo(() => {
-    const totalBytes = history.reduce((acc, item) => {
-      if (item.imageUrl?.startsWith('data:image')) {
-        // 粗略计算：base64 字符串长度 * 0.75 为实际字节数
-        return acc + (item.imageUrl.length * 0.75);
-      }
-      return acc;
-    }, 0);
-    
-    // 转为 MB，保留一位小数
-    const mb = totalBytes / (1024 * 1024);
-    return mb.toFixed(1);
-  }, [history]);
-
   // 加载 IndexedDB 数据
   const loadHistory = async () => {
     try {
+      await migrateLocalStorageData(); // 先执行迁移
       const dbImages = await getAllImagesFromDB();
-      
-      // 数据迁移：如果 LocalStorage 有数据但 DB 没数据，执行迁移
-      const localHistoryStr = localStorage.getItem('image_history');
-      if (localHistoryStr && dbImages.length === 0) {
-        const localHistory = JSON.parse(localHistoryStr);
-        if (localHistory.length > 0) {
-          console.log('正在将 LocalStorage 数据迁移到 IndexedDB...');
-          for (const item of localHistory) {
-            await saveImageToDB(item);
-          }
-          // 迁移完成后清空 LocalStorage
-          localStorage.removeItem('image_history');
-          const finalImages = await getAllImagesFromDB();
-          setHistory(finalImages);
-          return;
-        }
-      }
-      
       setHistory(dbImages);
     } catch (error) {
       console.error('加载历史记录失败:', error);
@@ -244,9 +212,56 @@ function App() {
 
   // 初始加载
   useEffect(() => {
-    loadHistory();
+    const initApp = async () => {
+      try {
+        // 1. 数据迁移
+        await migrateLocalStorageData();
+
+        // 2. 并行加载核心设置
+        const [
+          savedTheme, 
+          savedSidebar, 
+          savedModel, 
+          dbImages,
+          savedActiveView,
+          savedCreateMode
+        ] = await Promise.all([
+          getThemeSetting(),
+          getSidebarCollapsedSetting(),
+          getSelectedChatModelSetting(),
+          getAllImagesFromDB(),
+          getActiveViewSetting(),
+          getCreateModeSetting()
+        ]);
+
+        // 3. 应用设置
+        if (savedTheme) {
+          setIsDarkMode(savedTheme === 'dark');
+        } else {
+          const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          setIsDarkMode(prefersDark);
+        }
+
+        setIsSidebarCollapsed(savedSidebar);
+        
+        if (savedModel && CHAT_MODELS.some(m => m.value === savedModel)) {
+          setSelectedChatModel(savedModel);
+        }
+
+        if (savedActiveView) setActiveView(savedActiveView as 'home' | 'create' | 'landing');
+        if (savedCreateMode) setCreateMode(savedCreateMode as 'draw' | 'chat');
+
+        setHistory(dbImages);
+      } catch (error) {
+        console.error('App initialization failed:', error);
+      } finally {
+        setIsInitializing(false);
+      }
+    };
+
+    initApp();
     
-    // 监听 storage 事件（跨页面通信）
+    // 监听 storage 事件（主要用于跨标签页，虽然 IndexedDB 不触发，但保留作为兜底或未来扩展）
     const handleStorageChange = () => {
       loadHistory();
     };
@@ -257,16 +272,7 @@ function App() {
   // ===== 聊天状态 =====
   const [chatMessages] = useState<Message[]>([]);
 
-  const [selectedChatModel] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('selected_chat_model');
-      if (saved && CHAT_MODELS.some((m) => m.value === saved)) {
-        return saved;
-      }
-      return CHAT_MODELS[0].value;
-    }
-    return CHAT_MODELS[0].value;
-  });
+  const [selectedChatModel, setSelectedChatModel] = useState(CHAT_MODELS[0].value);
 
   // ===== 后台生成状态 =====
   const [isGenerating, setIsGenerating] = useState(false);
@@ -282,24 +288,32 @@ function App() {
     } else {
       document.documentElement.classList.remove('dark');
     }
-    localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+    setThemeSetting(isDarkMode);
   }, [isDarkMode]);
-
-  // 保存历史记录逻辑已迁移至 IndexedDB
-  // 此处原有的 localStorage.setItem('image_history', ...) 应该移除
-
-  // 保存聊天记录逻辑已迁移至 IndexedDB
-  // 此处原有的 localStorage.setItem('chat_history', ...) 应该移除
 
   // 保存聊天模型
   useEffect(() => {
-    localStorage.setItem('selected_chat_model', selectedChatModel);
+    setSelectedChatModelSetting(selectedChatModel);
   }, [selectedChatModel]);
 
   // 保存侧边栏状态
   useEffect(() => {
-    localStorage.setItem('sidebar_collapsed', String(isSidebarCollapsed));
+    setSidebarCollapsedSetting(isSidebarCollapsed);
   }, [isSidebarCollapsed]);
+
+  // 保存当前视图状态
+  useEffect(() => {
+    if (!isInitializing) {
+      setActiveViewSetting(activeView);
+    }
+  }, [activeView, isInitializing]);
+
+  // 保存创作模式状态
+  useEffect(() => {
+    if (!isInitializing) {
+      setCreateModeSetting(createMode);
+    }
+  }, [createMode, isInitializing]);
 
   // 图片预览键盘导航
   useEffect(() => {
@@ -321,6 +335,12 @@ function App() {
   }, [previewImage, handleNavigatePreview]);
 
   // ===== 处理函数 =====
+
+  // 切换视图并保存
+  const handleViewChange = useCallback((view: 'home' | 'create' | 'landing') => {
+    setActiveView(view);
+    setActiveViewSetting(view);
+  }, []);
 
   // 切换主题
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
@@ -487,7 +507,7 @@ function App() {
     const groupId = `batch-${Date.now()}`;
     
     // 预先创建占位符（作为加载反馈）
-    const numImages = options.maxImages || 4;
+    const numImages = options.maxImages || 1;
     const placeholders: HistoryItem[] = Array.from({ length: numImages }).map((_, i) => ({
       id: `${groupId}-${i + 1}`,
       groupId,
@@ -501,48 +521,58 @@ function App() {
 
     setHistory(prev => [...placeholders, ...prev]);
 
+    // 立即保存占位符到数据库，确保刷新后也能看到“生成中”状态
+    for (const placeholder of placeholders) {
+      saveImageToDB(placeholder).catch(err => console.error('Failed to save placeholder:', err));
+    }
+
     try {
       // 检查是否已停止
       if (stopGenerationRef.current) {
+        const errorItems = placeholders.map(item => ({ ...item, status: 'error' as const, error: '已停止生成' }));
         setHistory(prev => prev.map(item => 
           item.groupId === groupId ? { ...item, status: 'error', error: '已停止生成' } : item
         ));
+        for (const item of errorItems) await saveImageToDB(item);
         return;
       }
 
-      // 单次请求生成所有图片 (API 内部已硬编码 max_images: 4)
-      const result = await generateImage(finalPrompt, {
+      // 使用流式生成，实现“生成一张显示一张”
+      const result = await generateImageStream(finalPrompt, {
         ...options,
-        maxImages: numImages // 使用设置的张数，默认为 4
+        maxImages: numImages,
+        onProgress: async (current, total, data) => {
+          if (data.error) {
+            // 更新单张图片的错误状态
+            const errorId = `${groupId}-${current}`;
+            setHistory(prev => prev.map(item => 
+              item.id === errorId ? { ...item, status: 'error', error: data.error } : item
+            ));
+            // 同步到数据库
+            const errorItem = { ...placeholders[current - 1], status: 'error' as const, error: data.error };
+            await saveImageToDB(errorItem);
+          } else if (data.b64) {
+            // 更新单张图片的成功状态
+            const successId = `${groupId}-${current}`;
+            const newItem: HistoryItem = {
+              ...placeholders[current - 1],
+              id: successId,
+              imageUrl: data.b64,
+              status: 'success',
+              timestamp: Date.now()
+            };
+            
+            setHistory(prev => prev.map(item => 
+              item.id === successId ? newItem : item
+            ));
+            // 同步到数据库
+            await saveImageToDB(newItem);
+          }
+        }
       });
       
-      if (result.success && result.base64Images && result.base64Images.length > 0) {
-        const newItems: HistoryItem[] = result.base64Images.map((b64, i) => {
-          return {
-            id: `${groupId}-${i + 1}`,
-            groupId,
-            prompt: finalPrompt,
-            imageUrl: b64, // 仅使用 Base64
-            timestamp: Date.now(),
-            aspectRatio: options.aspectRatio,
-            size: options.size,
-            model: DEFAULT_MODEL,
-            status: 'success'
-          };
-        });
-
-        // 如果生成的数量少于预期的占位符数量，需要清理多余的占位符
-        setHistory(prev => {
-          const filtered = prev.filter(item => item.groupId !== groupId);
-          return [...newItems, ...filtered];
-        });
-
-        // 保存到数据库
-        for (const item of newItems) {
-          await saveImageToDB(item);
-        }
-      } else {
-        throw new Error(result.error || '生成失败');
+      if (!result.success && result.error) {
+        throw new Error(result.error);
       }
     } catch (err: any) {
       console.error('Generation failed:', err);
@@ -564,218 +594,78 @@ function App() {
     }
   };
 
+  // 处理图片上传成功
+  // 已移至 DrawPanel 内部处理，不再存入历史记录
+
   // ===== 渲染 =====
 
+  // 打开工作台
+  const handleEnterWorkbench = () => {
+    setActiveView('home');
+    setActiveViewSetting('home');
+  };
+
+  if (isInitializing) {
+    return (
+      <div className="fixed inset-0 bg-[var(--color-bg)] flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-[var(--color-primary-soft)] border-t-[var(--color-primary)] rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   return (
-    <motionHtml.div
-      className={cn(
-        'min-h-screen',
-        'bg-[var(--color-bg)]',
-        'text-[var(--color-text)]',
-        'transition-colors duration-300'
-      )}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.5 }}
-    >
-      {/* 图片预览弹窗 */}
-      <Modal
-        isOpen={!!previewImage}
-        onClose={() => {
-          setPreviewImage(null);
-          setShowImageDetails(false);
-        }}
-        size="lg"
-        className="!p-0 !max-w-[95vw] !max-h-[95vh] !bg-transparent !shadow-none overflow-visible"
-        showClose={false}
-      >
-        {previewImage && (
-          <div className="flex flex-col md:flex-row h-full max-h-[95vh] items-center justify-center">
-            {/* 图片展示区 */}
-            <div className={cn(
-              "relative group transition-all duration-300 ease-in-out",
-              "flex items-center justify-center",
-              showImageDetails ? "md:w-2/3 w-full" : "w-full"
-            )}>
-              <img
-                src={previewImage.imageUrl || ''}
-                alt={stripPromptCount(previewImage.prompt)}
-                className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl border border-white/10"
-              />
-              
-              {/* 顶部操作按钮 */}
-              <div className="absolute top-4 right-4 flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    if (confirm('确定要删除这张图片吗？')) {
-                      handleDeleteImage(previewImage.id);
-                      setPreviewImage(null);
-                      setShowImageDetails(false);
-                    }
-                  }}
-                  className="p-2 bg-black/40 text-red-400 rounded-full hover:bg-black/60 transition-all backdrop-blur-md border border-white/20"
-                  title="删除图片"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => setShowImageDetails(!showImageDetails)}
-                  className={cn(
-                    "p-2 rounded-full transition-all backdrop-blur-md border",
-                    showImageDetails 
-                      ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)] shadow-lg" 
-                      : "bg-black/40 text-white border-white/20 hover:bg-black/60"
-                  )}
-                  title={showImageDetails ? "隐藏详情" : "查看详情"}
-                >
-                  <Info className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => {
-                    setPreviewImage(null);
-                    setShowImageDetails(false);
-                  }}
-                  className="p-2 bg-black/40 text-white rounded-full hover:bg-black/60 transition-all backdrop-blur-md border border-white/20"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* 左右切换按钮 */}
-              {previewList.length > 1 && (
-                <>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleNavigatePreview('prev');
-                    }}
-                    className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-black/40 text-white rounded-full hover:bg-black/60 transition-all backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100 hidden md:flex"
-                    title="上一个 (←)"
-                  >
-                    <ChevronLeft className="w-6 h-6" />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleNavigatePreview('next');
-                    }}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-black/40 text-white rounded-full hover:bg-black/60 transition-all backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100 hidden md:flex"
-                    title="下一个 (→)"
-                  >
-                    <ChevronRight className="w-6 h-6" />
-                  </button>
-                </>
-              )}
-
-              {/* 底部悬浮操作栏 (仅在详情关闭时显示) */}
-              <AnimatePresence>
-                {!showImageDetails && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 20, x: '-50%' }}
-                    animate={{ opacity: 1, y: 0, x: '-50%' }}
-                    exit={{ opacity: 0, y: 20, x: '-50%' }}
-                    className="absolute bottom-6 left-1/2 flex items-center gap-3 px-4 py-2 bg-black/40 backdrop-blur-xl rounded-2xl border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <button 
-                      onClick={() => handleCopyPrompt(previewImage.prompt)}
-                      className="p-2 text-white/80 hover:text-white transition-colors"
-                      title="复制提示词"
-                    >
-                      <Copy className="w-5 h-5" />
-                    </button>
-                    <div className="w-px h-4 bg-white/20" />
-                    <button 
-                      onClick={() => handleDownload(previewImage.imageUrl || '', previewImage.prompt)}
-                      className="p-2 text-white/80 hover:text-white transition-colors"
-                      title="下载图片"
-                    >
-                      <Download className="w-5 h-5" />
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* 详情面板 (右侧) */}
-            <AnimatePresence>
-              {showImageDetails && (
-                <motion.div
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  className={cn(
-                    "w-full md:w-[380px] bg-[var(--color-bg-card)] md:h-[90vh] overflow-y-auto",
-                    "rounded-2xl md:ml-4 shadow-2xl border border-[var(--color-border)]",
-                    "flex flex-col"
-                  )}
-                >
-                  <div className="p-6 flex-1">
-                    <div className="flex items-center justify-between mb-6">
-                      <h3 className="text-xl font-bold text-[var(--color-text)]">图片详情</h3>
-                      <button 
-                        onClick={() => setShowImageDetails(false)}
-                        className="p-1.5 hover:bg-[var(--color-surface)] rounded-full transition-colors text-[var(--color-text-secondary)]"
-                      >
-                        <ChevronRight className="w-5 h-5" />
-                      </button>
-                    </div>
-
-                    <div className="space-y-6">
-                      <div>
-                        <h4 className="text-sm font-medium text-[var(--color-text-secondary)] mb-2">提示词</h4>
-                        <div className="p-4 bg-[var(--color-surface)] rounded-xl text-sm leading-relaxed border border-[var(--color-border)] text-[var(--color-text)]">
-                          {stripPromptCount(previewImage.prompt)}
-                        </div>
-                        <button
-                          onClick={() => handleCopyPrompt(previewImage.prompt)}
-                          className="mt-3 flex items-center gap-2 text-[var(--color-primary)] text-sm font-medium hover:opacity-80 transition-opacity"
-                        >
-                          <Copy className="w-4 h-4" />
-                          复制提示词
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="p-3 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]">
-                          <span className="text-[10px] text-[var(--color-text-secondary)] uppercase block mb-1">生成时间</span>
-                          <span className="text-sm font-medium text-[var(--color-text)]">{new Date(previewImage.timestamp).toLocaleString()}</span>
-                        </div>
-                        <div className="p-3 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]">
-                          <span className="text-[10px] text-[var(--color-text-secondary)] uppercase block mb-1">比例</span>
-                          <div className="flex items-center gap-2">
-                            <RatioIcon ratio={previewImage.aspectRatio || '1:1'} className="text-[var(--color-text)]" />
-                            <span className="text-sm font-medium text-[var(--color-text)]">{previewImage.aspectRatio || '1:1'}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* 更多元数据 */}
-                      <div className="grid grid-cols-2 gap-4">
-                        {previewImage.model && (
-                          <div className="p-3 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]">
-                            <span className="text-[10px] text-[var(--color-text-secondary)] uppercase block mb-1">模型</span>
-                            <span className="text-sm font-medium text-[var(--color-text)] truncate block">{previewImage.model}</span>
-                          </div>
-                        )}
-                        {previewImage.size && (
-                          <div className="p-3 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]">
-                            <span className="text-[10px] text-[var(--color-text-secondary)] uppercase block mb-1">分辨率</span>
-                            <span className="text-sm font-medium text-[var(--color-text)]">{previewImage.size}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 底部操作 */}
-                  <div className="p-6 border-t border-[var(--color-border)] bg-[var(--color-bg-card)] sticky bottom-0">
-                    <button
-                      onClick={() => handleDownload(previewImage.imageUrl, previewImage.prompt)}
-                      className="w-full h-12 bg-[var(--gradient-primary)] text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:opacity-90 transition-opacity"
-                    >
-                      <Download className="w-5 h-5" />
-                      保存到本地
-                    </button>
+    <AnimatePresence mode="wait">
+      {activeView === 'landing' ? (
+        <motion.div
+          key="landing"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0, y: -20 }}
+          transition={{ duration: 0.5 }}
+        >
+          <HomeView onStartCreate={handleEnterWorkbench} />
+        </motion.div>
+      ) : (
+        <motionHtml.div
+          key="workbench"
+          className={cn(
+            'h-screen h-[100dvh]',
+            'bg-[var(--color-bg)]',
+            'text-[var(--color-text)]',
+            'transition-colors duration-300',
+            'overflow-hidden'
+          )}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          {/* 图片预览弹窗 */}
+          <Modal
+            isOpen={!!previewImage}
+            onClose={() => {
+              setPreviewImage(null);
+              setShowImageDetails(false);
+            }}
+            size="lg"
+            className="!p-0 !max-w-[95vw] !max-h-[95vh] !bg-transparent !shadow-none overflow-visible"
+            showClose={false}
+          >
+            {previewImage && (
+              <div className="flex flex-col md:flex-row h-full max-h-[95vh] items-center justify-center">
+                {/* 图片展示区 */}
+                <div className={cn(
+                  "relative group transition-all duration-300 ease-in-out",
+                  "flex items-center justify-center",
+                  showImageDetails ? "md:w-2/3 w-full" : "w-full"
+                )}>
+                  <img
+                    src={previewImage.imageUrl || ''}
+                    alt={stripPromptCount(previewImage.prompt)}
+                    className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl border border-white/10"
+                  />
+                  
+                  {/* 顶部操作按钮 */}
+                  <div className="absolute top-4 right-4 flex items-center gap-2">
                     <button
                       onClick={() => {
                         if (confirm('确定要删除这张图片吗？')) {
@@ -784,76 +674,214 @@ function App() {
                           setShowImageDetails(false);
                         }
                       }}
-                      className="w-full mt-3 h-12 text-red-500 font-medium flex items-center justify-center gap-2 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-colors"
+                      className="p-2 bg-black/40 text-red-400 rounded-full hover:bg-black/60 transition-all backdrop-blur-md border border-white/20"
+                      title="删除图片"
                     >
                       <Trash2 className="w-5 h-5" />
-                      删除图片
+                    </button>
+                    <button
+                      onClick={() => setShowImageDetails(!showImageDetails)}
+                      className={cn(
+                        "p-2 rounded-full transition-all backdrop-blur-md border",
+                        showImageDetails 
+                          ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)] shadow-lg" 
+                          : "bg-black/40 text-white border-white/20 hover:bg-black/60"
+                      )}
+                      title={showImageDetails ? "隐藏详情" : "查看详情"}
+                    >
+                      <Info className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPreviewImage(null);
+                        setShowImageDetails(false);
+                      }}
+                      className="p-2 bg-black/40 text-white rounded-full hover:bg-black/60 transition-all backdrop-blur-md border border-white/20"
+                    >
+                      <X className="w-5 h-5" />
                     </button>
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        )}
-      </Modal>
 
-      {/* 导出弹窗 */}
-      {exportImage && (
-        <ExportModal
-          isOpen={!!exportImage}
-          onClose={() => setExportImage(null)}
-          imageUrl={exportImage.imageUrl || ''}
-          prompt={exportImage.prompt}
-        />
-      )}
+                  {/* 左右切换按钮 */}
+                  {previewList.length > 1 && (
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleNavigatePreview('prev');
+                        }}
+                        className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-black/40 text-white rounded-full hover:bg-black/60 transition-all backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100 hidden md:flex"
+                        title="上一个 (←)"
+                      >
+                        <ChevronLeft className="w-6 h-6" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleNavigatePreview('next');
+                        }}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-black/40 text-white rounded-full hover:bg-black/60 transition-all backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100 hidden md:flex"
+                        title="下一个 (→)"
+                      >
+                        <ChevronRight className="w-6 h-6" />
+                      </button>
+                    </>
+                  )}
 
-      {/* 全局提示 */}
-      <AnimatePresence>
-        {toast && (
-          <Toast
-            message={toast.message}
-            type={toast.type}
-            onClose={() => setToast(null)}
+                  {/* 底部悬浮操作栏 (仅在详情关闭时显示) */}
+                  <AnimatePresence>
+                    {!showImageDetails && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 20, x: '-50%' }}
+                        animate={{ opacity: 1, y: 0, x: '-50%' }}
+                        exit={{ opacity: 0, y: 20, x: '-50%' }}
+                        className="absolute bottom-6 left-1/2 flex items-center gap-3 px-4 py-2 bg-black/40 backdrop-blur-xl rounded-2xl border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <button 
+                          onClick={() => handleCopyPrompt(previewImage.prompt)}
+                          className="p-2 text-white/80 hover:text-white transition-colors"
+                          title="复制提示词"
+                        >
+                          <Copy className="w-5 h-5" />
+                        </button>
+                        <div className="w-px h-4 bg-white/20" />
+                        <button 
+                          onClick={() => handleDownload(previewImage.imageUrl || '', previewImage.prompt)}
+                          className="p-2 text-white/80 hover:text-white transition-colors"
+                          title="下载图片"
+                        >
+                          <Download className="w-5 h-5" />
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* 详情面板 (右侧) */}
+                <AnimatePresence>
+                  {showImageDetails && (
+                    <motion.div
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 20 }}
+                      className={cn(
+                        "w-full md:w-[380px] bg-[var(--color-bg-card)] md:h-[90vh] overflow-y-auto",
+                        "rounded-2xl md:ml-4 shadow-2xl border border-[var(--color-border)]",
+                        "flex flex-col"
+                      )}
+                    >
+                      <div className="p-6 flex-1">
+                        <div className="flex items-center justify-between mb-6">
+                          <h3 className="text-xl font-bold text-[var(--color-text)]">图片详情</h3>
+                          <button 
+                            onClick={() => setShowImageDetails(false)}
+                            className="p-1.5 hover:bg-[var(--color-surface)] rounded-full transition-colors text-[var(--color-text-secondary)]"
+                          >
+                            <ChevronRight className="w-5 h-5" />
+                          </button>
+                        </div>
+
+                        <div className="space-y-6">
+                          <div>
+                            <h4 className="text-sm font-medium text-[var(--color-text-secondary)] mb-2">提示词</h4>
+                            <div className="p-4 bg-[var(--color-surface)] rounded-xl text-sm leading-relaxed border border-[var(--color-border)] text-[var(--color-text)]">
+                              {stripPromptCount(previewImage.prompt)}
+                            </div>
+                            <button
+                              onClick={() => handleCopyPrompt(previewImage.prompt)}
+                              className="mt-3 flex items-center gap-2 text-[var(--color-primary)] text-sm font-medium hover:opacity-80 transition-opacity"
+                            >
+                              <Copy className="w-4 h-4" />
+                              复制提示词
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="p-3 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]">
+                              <span className="text-[10px] text-[var(--color-text-secondary)] uppercase block mb-1">生成时间</span>
+                              <span className="text-sm font-medium text-[var(--color-text)]">{new Date(previewImage.timestamp).toLocaleString()}</span>
+                            </div>
+                            <div className="p-3 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]">
+                              <span className="text-[10px] text-[var(--color-text-secondary)] uppercase block mb-1">比例</span>
+                              <div className="flex items-center gap-2">
+                                <RatioIcon ratio={previewImage.aspectRatio || '1:1'} className="text-[var(--color-text)]" />
+                                <span className="text-sm font-medium text-[var(--color-text)]">{previewImage.aspectRatio || '1:1'}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 更多元数据 */}
+                          <div className="grid grid-cols-2 gap-4">
+                            {previewImage.model && (
+                              <div className="p-3 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]">
+                                <span className="text-[10px] text-[var(--color-text-secondary)] uppercase block mb-1">模型</span>
+                                <span className="text-sm font-medium text-[var(--color-text)] truncate block">{previewImage.model}</span>
+                              </div>
+                            )}
+                            {previewImage.size && (
+                              <div className="p-3 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]">
+                                <span className="text-[10px] text-[var(--color-text-secondary)] uppercase block mb-1">分辨率</span>
+                                <span className="text-sm font-medium text-[var(--color-text)]">{previewImage.size}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 底部操作 */}
+                      <div className="p-6 border-t border-[var(--color-border)] bg-[var(--color-bg-card)] sticky bottom-0">
+                        <button
+                          onClick={() => handleDownload(previewImage.imageUrl, previewImage.prompt)}
+                          className="w-full h-12 bg-[image:var(--gradient-primary)] text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:opacity-90 transition-opacity"
+                        >
+                          <Download className="w-5 h-5" />
+                          保存到本地
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm('确定要删除这张图片吗？')) {
+                              handleDeleteImage(previewImage.id);
+                              setPreviewImage(null);
+                              setShowImageDetails(false);
+                            }
+                          }}
+                          className="w-full mt-3 h-12 text-red-500 font-medium flex items-center justify-center gap-2 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-colors"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                          删除图片
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+          </Modal>
+
+          {/* 导出卡片弹窗 */}
+          <ExportModal
+            isOpen={!!exportImage}
+            onClose={() => setExportImage(null)}
+            imageUrl={exportImage?.imageUrl || ''}
+            prompt={exportImage?.prompt || ''}
           />
-        )}
-      </AnimatePresence>
 
-      {/* 桌面端布局 */}
-      <div className="hidden md:flex">
-        {/* 侧边栏导航 */}
-        <Navigation
-          activeView={activeView}
-          onViewChange={setActiveView}
-          createMode={createMode}
-          onOpenDraw={handleOpenDraw}
-          onOpenChat={handleOpenChat}
-          isDarkMode={isDarkMode}
-          onToggleTheme={toggleTheme}
-          collapsed={isSidebarCollapsed}
-          onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-          memoryUsage={memoryUsage}
-          totalCount={history.length}
-          onOpenSettings={() => setIsSettingsOpen(true)}
-        />
-
-        {/* API 设置弹窗 */}
-        <SettingsModal
-          isOpen={isSettingsOpen}
-          onClose={() => setIsSettingsOpen(false)}
-          onConfigsChange={() => {
-            // 这里可以添加配置更新后的逻辑，比如重新加载 API 客户端
-            showToast('API 配置已更新', 'success');
-          }}
-        />
-
-        {/* 主内容区域 */}
-        <main className={cn(
-          "flex-1 h-screen overflow-hidden transition-all duration-300",
-          isSidebarCollapsed ? "ml-20" : "ml-64"
-        )}>
-          <Container size="full" className="h-full px-0 sm:px-0 lg:px-0">
-            <PageContent
-                activeView={activeView}
+          {/* 核心工作台视图 */}
+          <WorkbenchView
+            activeView={activeView as 'home' | 'create'}
+            createMode={createMode}
+            isSidebarCollapsed={isSidebarCollapsed}
+            onToggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            isDarkMode={isDarkMode}
+            onToggleTheme={toggleTheme}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+            onViewChange={handleViewChange}
+            onOpenDraw={handleOpenDraw}
+            onOpenChat={handleOpenChat}
+          >
+            <Container className="flex-1 flex flex-col md:pt-6 h-full min-h-0">
+              <PageContent
+                activeView={activeView as 'home' | 'create'}
                 createMode={createMode}
                 onModeChange={setCreateMode}
                 history={history}
@@ -885,58 +913,26 @@ function App() {
                 sortOrder={sortOrder}
                 onSortOrderChange={setSortOrder}
               />
-          </Container>
-        </main>
-      </div>
+            </Container>
+          </WorkbenchView>
 
-      {/* 移动端布局 */}
-      <div className="md:hidden flex flex-col h-screen overflow-hidden">
-        {/* 主内容 */}
-        <main className="flex-1 relative overflow-hidden">
-          <PageContent
-            activeView={activeView}
-            createMode={createMode}
-            onModeChange={setCreateMode}
-            history={history}
-            chatMessages={chatMessages}
-            onOpenDraw={handleOpenDraw}
-            onCopyPrompt={handleCopyPrompt}
-            onDeleteImage={handleDeleteImage}
-            onDeleteGroup={handleDeleteGroup}
-            onDownload={handleDownload}
-            onExport={handleExport}
-            onPreviewImage={handlePreviewImage}
-            showToast={showToast}
-            isGenerating={isGenerating}
-            genStartTime={genStartTime}
-            onStartGeneration={handleStartGeneration}
-            onStopGeneration={handleStopGeneration}
-            aspectRatioFilter={aspectRatioFilter}
-            onAspectRatioFilterChange={setAspectRatioFilter}
-            isSelectionMode={isSelectionMode}
-            selectedIds={selectedIds}
-            onToggleSelectionMode={toggleSelectionMode}
-            onToggleSelectImage={toggleSelectImage}
-            onSelectAll={handleSelectAll}
-            onBatchDelete={handleBatchDelete}
-            onBatchDownload={handleBatchDownload}
-            onClearAll={handleClearAll}
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            sortOrder={sortOrder}
-            onSortOrderChange={setSortOrder}
+          {/* 设置弹窗 */}
+          <SettingsModal
+            isOpen={isSettingsOpen}
+            onClose={() => setIsSettingsOpen(false)}
           />
-        </main>
 
-        {/* 底部导航 */}
-        <Navigation
-          activeView={activeView}
-          onViewChange={setActiveView}
-          memoryUsage={memoryUsage}
-          onOpenSettings={() => setIsSettingsOpen(true)}
-        />
-      </div>
-    </motionHtml.div>
+          {/* 全局 Toast */}
+          {toast && (
+            <Toast
+              message={toast.message}
+              type={toast.type}
+              onClose={() => setToast(null)}
+            />
+          )}
+        </motionHtml.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -953,8 +949,9 @@ interface PageContentProps {
   onDeleteImage: (id: string) => void;
   onDownload: (url: string | undefined, prompt: string) => void;
   onPreviewImage: (item: any, allItems?: any[], index?: number) => void;
-  onDeleteGroup?: (groupId: string) => void;
+  onDeleteGroup: (groupId: string) => void;
   onExport: (item: HistoryItem) => void;
+  onImageUploaded?: (url: string) => void;
   showToast: (message: string, type?: ToastType) => void;
   isGenerating: boolean;
   genStartTime: number | null;
@@ -989,6 +986,7 @@ const PageContent: React.FC<PageContentProps> = ({
   onPreviewImage,
   onDeleteGroup,
   onExport,
+  onImageUploaded,
   showToast,
   isGenerating,
   genStartTime,
@@ -1009,12 +1007,12 @@ const PageContent: React.FC<PageContentProps> = ({
   sortOrder,
   onSortOrderChange,
 }) => {
-  const [isDesktop, setIsDesktop] = useState(false);
+  const isDesktop = useMemo(() => window.innerWidth >= 768, []);
 
   // 检测桌面端
+  const [currentIsDesktop, setCurrentIsDesktop] = useState(isDesktop);
   useEffect(() => {
-    const check = () => setIsDesktop(window.innerWidth >= 768);
-    check();
+    const check = () => setCurrentIsDesktop(window.innerWidth >= 768);
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
@@ -1037,7 +1035,7 @@ const PageContent: React.FC<PageContentProps> = ({
     }
     
     // 排序
-    result = [...result].sort((a, b) => {
+    const sortedResult = [...result].sort((a, b) => {
       if (sortOrder === 'newest') {
         return b.timestamp - a.timestamp;
       } else {
@@ -1045,7 +1043,7 @@ const PageContent: React.FC<PageContentProps> = ({
       }
     });
     
-    return result;
+    return sortedResult;
   }, [history, aspectRatioFilter, searchQuery, sortOrder]);
 
   const groupedHistory = useMemo(() => {
@@ -1083,20 +1081,20 @@ const PageContent: React.FC<PageContentProps> = ({
   const allVisibleIds = useMemo(() => filteredHistory.map(item => item.id), [filteredHistory]);
 
   return (
-    <div className="flex flex-col h-full">
-      <AnimatePresence mode="wait">
+    <div className="flex flex-col h-full min-h-0 relative overflow-hidden">
+      <AnimatePresence mode="popLayout" initial={false}>
         {activeView === 'home' && (
           <motion.div
             key="home"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="h-full flex flex-col"
+            className="h-full w-full flex flex-col relative"
           >
             {/* 可滚动区域 */}
             <div className={cn(
               'flex-1 overflow-y-auto',
-              !isDesktop && 'pb-32'
+              !currentIsDesktop && 'pb-32'
             )}>
               {/* 顶部标题和过滤器 */}
               <GalleryHeader
@@ -1115,16 +1113,14 @@ const PageContent: React.FC<PageContentProps> = ({
                 onClearAll={onClearAll}
                 sortOrder={sortOrder}
                 onSortOrderChange={onSortOrderChange}
-                isDesktop={isDesktop}
+                isDesktop={currentIsDesktop}
               />
 
               <div className={cn(
-                isDesktop ? 'pt-8 px-4' : 'px-3 pt-4'
+                currentIsDesktop ? 'pt-8 px-4' : 'px-3 pt-4'
               )}>
-                {!isDesktop && history.length === 0 && (
-                  <div className="px-4 pb-2">
-                    <Welcome />
-                  </div>
+                {history.length === 0 && (
+                  <Welcome />
                 )}
 
                 {groupedHistory.length > 0 ? (
@@ -1181,14 +1177,12 @@ const PageContent: React.FC<PageContentProps> = ({
 
                 {/* 完全空状态 */}
                 {history.length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-20 text-[var(--color-text-secondary)]">
-                    <ImageIcon className="w-16 h-16 mb-4 opacity-30" />
-                    <p className="text-lg">还没有作品，开始创作吧！</p>
+                  <div className="flex flex-col items-center justify-center py-10 text-[var(--color-text-secondary)]">
                     <button
                       onClick={onOpenDraw}
-                      className="mt-6 px-6 py-2 bg-[var(--color-primary)] text-white rounded-full font-medium hover:opacity-90 transition-opacity"
+                      className="px-10 py-4 bg-[var(--color-primary)] text-white rounded-2xl font-bold text-lg shadow-lg shadow-[var(--color-primary)]/20 hover:scale-105 active:scale-95 transition-all"
                     >
-                      去创作
+                      立即开始创作
                     </button>
                   </div>
                 )}
@@ -1257,10 +1251,10 @@ const PageContent: React.FC<PageContentProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="h-full flex flex-col overflow-hidden"
+            className="h-full flex flex-col overflow-hidden relative"
           >
             {/* 创作视图 */}
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 h-full min-h-0 overflow-hidden">
               <CreateView
                 activeMode={createMode}
                 onModeChange={onModeChange}
@@ -1272,6 +1266,7 @@ const PageContent: React.FC<PageContentProps> = ({
                 onPreviewImage={onPreviewImage}
                 onDeleteImage={onDeleteImage}
                 onDeleteGroup={onDeleteGroup}
+                onImageUploaded={onImageUploaded}
                 showToast={showToast}
               />
             </div>

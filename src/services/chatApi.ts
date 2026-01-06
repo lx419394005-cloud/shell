@@ -14,8 +14,8 @@ const API_BASE_URL = 'https://www.aiping.cn/api/v1';
 /** Default model */
 const DEFAULT_MODEL = 'DeepSeek-V3.2';
 
-/** Authorization token */
-const AUTH_TOKEN = import.meta.env.VITE_API_TOKEN || 'QC-3832b621c6e6ef01e7e65bd6811a875e-ce9870a4261b87deeec35f4bad62f57f';
+/** Authorization token - MUST be provided via environment or user config */
+export const AUTH_TOKEN = import.meta.env.VITE_API_TOKEN || '';
 
 /** System prompt */
 const SYSTEM_PROMPT = `You are a helpful and creative AI assistant. You excel at:

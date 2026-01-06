@@ -51,8 +51,8 @@ export const Container: React.FC<ContainerProps> = ({
   return (
     <div
       className={cn(
-        // 基础样式
-        'mx-auto',
+        // 基础样式 - w-full 和 min-w-0 确保在 flex 布局中正确扩展
+        'w-full min-w-0 mx-auto',
         // 内边距
         'px-4 sm:px-6 lg:px-8',
         // 最大宽度

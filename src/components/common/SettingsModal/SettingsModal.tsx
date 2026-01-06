@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Plus, Trash2, Key, Globe, Shield, Check, Info, Save, X } from 'lucide-react';
+import { Settings, Plus, Trash2, Key, Globe, Shield, Check, Info, Save, X, MessageSquare, Palette } from 'lucide-react';
 import { Modal } from '../Modal/Modal';
 import { Button } from '../Button/Button';
 import { cn } from '@/utils/cn';
 import { type ApiConfig } from '@/types';
 import { saveApiConfigToDB, getAllApiConfigsFromDB, deleteApiConfigFromDB } from '@/utils/db';
+import { getActiveApiConfig } from '@/utils/apiConfig';
+import { AUTH_TOKEN } from '@/services/chatApi';
 
 export interface SettingsModalProps {
   isOpen: boolean;
@@ -20,6 +22,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [configs, setConfigs] = useState<ApiConfig[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [editingConfig, setEditingConfig] = useState<ApiConfig | null>(null);
+  const [activeChatApi, setActiveChatApi] = useState<ApiConfig | null>(null);
+  const [activeImageApi, setActiveImageApi] = useState<ApiConfig | null>(null);
   
   const [formData, setFormData] = useState<Partial<ApiConfig>>({
     name: '',
@@ -33,6 +37,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const loadConfigs = async () => {
     const data = await getAllApiConfigsFromDB();
     setConfigs(data);
+    
+    // 加载当前激活的配置
+    const chatConfig = await getActiveApiConfig('chat');
+    const imageConfig = await getActiveApiConfig('image');
+    setActiveChatApi(chatConfig);
+    setActiveImageApi(imageConfig);
   };
 
   useEffect(() => {
@@ -85,7 +95,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       size="2xl"
     >
       <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between">
+        {/* 当前状态概览 */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="p-4 rounded-2xl bg-[var(--color-primary-soft)] border border-[var(--color-primary)]/20">
+            <div className="flex items-center gap-2 mb-2">
+              <MessageSquare className="w-4 h-4 text-[var(--color-primary)]" />
+              <span className="text-xs font-bold text-[var(--color-primary)] uppercase tracking-wider">当前对话 API</span>
+            </div>
+            <div className="space-y-1">
+              <div className="text-sm font-bold text-[var(--color-text)]">
+                {activeChatApi ? activeChatApi.name : '系统默认 (aiping.cn)'}
+              </div>
+              <div className="text-[10px] text-[var(--color-text-secondary)] truncate font-mono">
+                {activeChatApi ? `${activeChatApi.apiKey.slice(0, 12)}***` : (AUTH_TOKEN ? `${AUTH_TOKEN.slice(0, 12)}***` : '未配置 Token')}
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-100 dark:bg-indigo-500/10 dark:border-indigo-500/20">
+            <div className="flex items-center gap-2 mb-2">
+              <Palette className="w-4 h-4 text-indigo-500" />
+              <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider">当前绘图 API</span>
+            </div>
+            <div className="space-y-1">
+              <div className="text-sm font-bold text-[var(--color-text)]">
+                {activeImageApi ? activeImageApi.name : '系统默认 (aiping.cn)'}
+              </div>
+              <div className="text-[10px] text-[var(--color-text-secondary)] truncate font-mono">
+                {activeImageApi ? `${activeImageApi.apiKey.slice(0, 12)}***` : (AUTH_TOKEN ? `${AUTH_TOKEN.slice(0, 12)}***` : '未配置 Token')}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between pt-2 border-t border-[var(--color-border)]">
           <div>
             <h3 className="text-lg font-bold text-[var(--color-text)]">API 管理</h3>
             <p className="text-sm text-[var(--color-text-secondary)]">添加你的自定义 API Key 和接口地址</p>
@@ -93,6 +136,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <Button
             onClick={() => setIsAdding(true)}
             className="flex items-center gap-2"
+            gradient={false}
           >
             <Plus className="w-4 h-4" />
             添加配置

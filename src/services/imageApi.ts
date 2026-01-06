@@ -6,7 +6,8 @@
  */
 
 import type { ImageGenerationOptions, ImageGenerationResult } from '@/types/api';
-import { getActiveApiConfig, formatApiUrl } from '@/utils/apiConfig';
+import { getActiveApiConfig, formatApiUrl, getUseCloudProxy as getUseCloudProxyFromConfig } from '@/utils/apiConfig';
+import { AUTH_TOKEN } from './chatApi';
 
 /** API base URL - Cloud function proxy to bypass CORS */
 const LAF_APP_BASE_URL = import.meta.env.VITE_LAF_APP_URL || 'https://ax0rcpp85w.sealosbja.site';
@@ -15,21 +16,10 @@ const IMAGE_API_URL = `${LAF_APP_BASE_URL}/generate-image`;
 
 /** Direct API base URL for local fetch (uses Vite proxy in dev) */
 const DIRECT_API_URL = '/api/v1/images/generations';
-/** Auth token for direct API */
-const AUTH_TOKEN = import.meta.env.VITE_API_TOKEN || 'QC-3832b621c6e6ef01e7e65bd6811a875e-ce9870a4261b87deeec35f4bad62f57f';
-/** Whether to use cloud proxy */
-export const getUseCloudProxy = () => {
-  if (typeof window !== 'undefined') {
-    const saved = localStorage.getItem('use_cloud_proxy');
-    if (saved !== null) return saved === 'true';
-  }
-  return import.meta.env.VITE_USE_CLOUD_PROXY === 'true';
-};
 
-export const setUseCloudProxy = (value: boolean) => {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('use_cloud_proxy', value.toString());
-  }
+/** Resolution presets */
+export const getUseCloudProxy = async () => {
+  return getUseCloudProxyFromConfig();
 };
 
 /** Default model */
@@ -63,7 +53,8 @@ export async function generateImageStream(
     negativePrompt = '',
     size = '2K',
     scale = 1,
-    maxImages = 4,
+    maxImages = 1,
+    image,
     onProgress,
     signal,
   } = options;
@@ -76,6 +67,7 @@ export async function generateImageStream(
     input: {
       prompt: promptWithSettings,
       negative_prompt: negativePrompt?.trim() || '',
+      image,
     },
     extra_body: {
       size,
@@ -83,7 +75,7 @@ export async function generateImageStream(
       watermark: false,
       sequential_image_generation: "auto",
       sequential_image_generation_options: {
-        max_images: 4
+        max_images: maxImages
       },
       provider: {
         only: [],
@@ -97,7 +89,7 @@ export async function generateImageStream(
     },
   });
 
-  const useCloudProxy = getUseCloudProxy();
+  const useCloudProxy = await getUseCloudProxy();
   const activeConfig = await getActiveApiConfig('image');
   
   const targetUrl = activeConfig 
@@ -202,7 +194,7 @@ export async function generateImageStream(
  *   aspectRatio: '16:9',
  *   negativePrompt: 'blurry, low quality',
  *   size: '2K',
- *   maxImages: 4
+ *   maxImages: 1
  * });
  */
 export async function generateImage(
@@ -214,7 +206,8 @@ export async function generateImage(
     negativePrompt = '',
     size = '2K',
     scale = 1,
-    maxImages = 4,
+    maxImages = 1,
+    image,
     signal,
   } = options;
 
@@ -228,6 +221,7 @@ export async function generateImage(
     input: {
       prompt: promptWithSettings,
       negative_prompt: negativePrompt?.trim() || '',
+      image,
     },
     extra_body: {
       size,
@@ -235,7 +229,7 @@ export async function generateImage(
       watermark: false,
       sequential_image_generation: "auto",
       sequential_image_generation_options: {
-        max_images: 4
+        max_images: maxImages
       },
       provider: {
         only: [],
@@ -249,7 +243,7 @@ export async function generateImage(
     },
   });
 
-  const useCloudProxy = getUseCloudProxy();
+  const useCloudProxy = await getUseCloudProxy();
   const activeConfig = await getActiveApiConfig('image');
 
   const targetUrl = activeConfig 

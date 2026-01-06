@@ -4,3 +4,4 @@ import { Container } from './Container/Container';
 
 export { Navigation };
 export { Container };
+export * from './WorkbenchView';
