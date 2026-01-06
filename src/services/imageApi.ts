@@ -6,14 +6,9 @@
  */
 
 import type { ImageGenerationOptions, ImageGenerationResult } from '@/types/api';
-import { getActiveApiConfig, formatApiUrl } from '@/utils/apiConfig';
 
-/** API base URL - Cloud function proxy to bypass CORS */
-const LAF_APP_BASE_URL = import.meta.env.VITE_LAF_APP_URL || 'https://ax0rcpp85w.sealosbja.site';
-/** Full image generation API endpoint */
-const IMAGE_API_URL = `${LAF_APP_BASE_URL}/generate-image`;
-
-/** Resolution presets - 始终使用云函数代理绕过 CORS */
+/** Image generation API endpoint - uses Vercel rewrites proxy to bypass CORS */
+const IMAGE_API_URL = '/api/v1/images/generations';
 
 /** Default model */
 export const DEFAULT_MODEL = 'Doubao-Seedream-4.5';
