@@ -6,6 +6,7 @@
  */
 
 import type { ImageGenerationOptions, ImageGenerationResult } from '@/types/api';
+import { getActiveApiConfig } from '@/utils/apiConfig';
 
 /** Image generation API endpoint - uses Vercel rewrites proxy to bypass CORS */
 const IMAGE_API_URL = '/api/v1/images/generations';
@@ -77,9 +78,15 @@ export async function generateImageStream(
     },
   });
 
-  // 始终使用云函数代理绕过 CORS
+  // 获取 API 配置并设置认证头
+  const activeConfig = await getActiveApiConfig('image');
+  if (!activeConfig) {
+    throw new Error('请先在设置中配置 API');
+  }
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'Authorization': `Bearer ${activeConfig.apiKey}`,
   };
 
   const allImages: string[] = [];
@@ -219,9 +226,15 @@ export async function generateImage(
     },
   });
 
-  // 始终使用云函数代理绕过 CORS
+  // 获取 API 配置并设置认证头
+  const activeConfig = await getActiveApiConfig('image');
+  if (!activeConfig) {
+    throw new Error('请先在设置中配置 API');
+  }
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'Authorization': `Bearer ${activeConfig.apiKey}`,
   };
 
   try {
