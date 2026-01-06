@@ -9,8 +9,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Settings2, ImageIcon, AlertCircle, X, Loader2, Wand2, RotateCcw, Trash2, Download, ShieldAlert } from 'lucide-react';
 import { cn } from '@/utils/cn';
-import { ASPECT_RATIOS, type AspectRatioKey, getUseCloudProxy } from '@/services/imageApi';
-import { setUseCloudProxy, getActiveApiConfig } from '@/utils/apiConfig';
+import { ASPECT_RATIOS, type AspectRatioKey } from '@/services/imageApi';
+import { getActiveApiConfig } from '@/utils/apiConfig';
 import { uploadToPicUI } from '@/services/picuiApi';
 import { optimizePrompt } from '@/services/chatApi';
 import { RatioIcon } from '@/components/common/RatioIcon/RatioIcon';
@@ -92,13 +92,12 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
   const [aspectRatio, setAspectRatio] = useState<AspectRatioKey>('1:1');
   const [resolution, setResolution] = useState<'2K' | '4K'>('2K');
   const [maxImages, setMaxImages] = useState<number>(1);
-  const [useCloudProxy, setUseCloudProxyState] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   
   // 批量操作状态
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  
+
   // API 信息状态
   const [activeApi, setActiveApi] = useState<any>(null);
   const [hasToken, setHasToken] = useState(true);
@@ -111,6 +110,7 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
     };
     loadApiInfo();
   }, []);
+
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   
   // 使用 prop 或本地 fallback
@@ -217,30 +217,6 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
       prevHistoryLength.current = groupedHistory.length;
     }
   }, [groupedHistory.length, isGenerating]);
-
-  // Persistence Effects
-  useEffect(() => {
-    const initCloudProxy = async () => {
-      const use = await getUseCloudProxy();
-      setUseCloudProxyState(use);
-    };
-    initCloudProxy();
-
-    // 监听来自其他页面的 storage 变更
-    const handleStorageChange = (e: StorageEvent) => {
-      // 如果有错误信息，可以考虑通过 IndexedDB 传递
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
-
-  // Toggle proxy mode
-  const toggleProxyMode = async () => {
-    const newValue = !useCloudProxy;
-    setUseCloudProxyState(newValue);
-    await setUseCloudProxy(newValue);
-  };
 
   // Handle prompt optimization
   const handleOptimizePrompt = async () => {
@@ -395,31 +371,14 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
               </button>
             </div>
           )}
-          
-          {/* Proxy Switcher */}
-          <div className="flex items-center gap-2">
-            {activeApi && (
-              <div className="hidden sm:flex flex-col items-end mr-2 text-[10px] leading-tight text-[var(--color-text-secondary)]">
-                <span className="font-bold text-[var(--color-text)] opacity-80">{activeApi.name}</span>
-                <span className="opacity-60 max-w-[120px] truncate">{activeApi.apiKey.slice(0, 8)}***</span>
-              </div>
-            )}
-            <button
-              onClick={toggleProxyMode}
-              className={cn(
-                "flex items-center gap-2 px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-medium transition-all border",
-                useCloudProxy 
-                  ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)] border-[var(--color-primary-soft)]"
-                  : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)]"
-              )}
-            >
-              <div className={cn(
-                "w-1.5 h-1.5 rounded-full animate-pulse",
-                useCloudProxy ? "bg-[var(--color-primary)]" : "bg-gray-400"
-              )} />
-              {useCloudProxy ? "云模式" : "直连"}
-            </button>
-          </div>
+
+          {/* API 信息显示 */}
+          {activeApi && (
+            <div className="hidden sm:flex flex-col items-end text-[10px] leading-tight text-[var(--color-text-secondary)]">
+              <span className="font-bold text-[var(--color-text)] opacity-80">{activeApi.name}</span>
+              <span className="opacity-60 max-w-[120px] truncate">{activeApi.apiKey.slice(0, 8)}***</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -634,21 +593,6 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
 
       {/* Input Area */}
       <div className="absolute bottom-0 left-0 right-0 z-30">
-        {/* Token Missing Warning */}
-        {!hasToken && (
-          <div className="mx-4 mb-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-2xl px-4 py-3 flex items-center justify-between gap-3 shadow-lg shadow-amber-500/5 backdrop-blur-md animate-in slide-in-from-bottom duration-500">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400">
-                <ShieldAlert className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-amber-800 dark:text-amber-300">未检测到 API Token</p>
-                <p className="text-xs text-amber-700/70 dark:text-amber-400/60">请在侧边栏“API 设置”中配置您的 Key 才能开始创作</p>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* 批量操作工具栏 */}
         <AnimatePresence>
           {isSelectionMode && (
@@ -697,6 +641,21 @@ export const DrawPanel: React.FC<DrawPanelProps> = ({
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Token Missing Warning */}
+        {!hasToken && (
+          <div className="mx-4 mb-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-2xl px-4 py-3 flex items-center justify-between gap-3 shadow-lg shadow-amber-500/5 backdrop-blur-md animate-in slide-in-from-bottom duration-500">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-amber-800 dark:text-amber-300">未检测到 API Token</p>
+                <p className="text-xs text-amber-700/70 dark:text-amber-400/60">请在侧边栏"API 设置"中配置您的 Key 才能开始创作</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className={cn(
           "px-4 flex justify-center bg-gradient-to-t from-[var(--color-bg)] via-[var(--color-bg)]/80 to-transparent pt-10",
